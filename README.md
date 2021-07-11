@@ -1,7 +1,8 @@
 # DataPipe
 
 ## What
-DataPipe is a small opinionated framework for easily implementing the vertical slice architectural style in .Net Core applications.
+DataPipe is a small opinionated framework for easily implementing the vertical slice architectural style in .Net Core applications.  
+You can find it on nuget as **SCB.DataPipe**
 
 ## Background
 I've been developing vertical slice architectures since around 2013, mostly taking inspiration from the Pipe and Filters integration pattern and Unix pipes. I first tentatively blogged about it in [messaging as a programming model](https://stevebate.wordpress.com/2013/08/12/messaging-as-a-programming-model-part-1/) but since that time things have moved on a lot with many refinements based on learning and solving issues encountered in my day to day work with this model. 
