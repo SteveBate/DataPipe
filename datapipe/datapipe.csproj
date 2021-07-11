@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net5.0</TargetFramework>
+    <PackageId>SCB.DataPipe</PackageId>
+    <Version>1.0.2</Version>
+    <VersionSuffix>alpha</VersionSuffix>
+    <Authors>Stephen C. Bate</Authors>
+    <PackageTags>Pipe and Filters;Vertical Slice;Pipelines</PackageTags>
+    <Description>A small framework for implementing in-memory Pipe and Filters</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.TypeExtensions" Version="4.7.0"/>
+  </ItemGroup>
+</Project>
