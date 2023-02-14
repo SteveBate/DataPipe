@@ -1,4 +1,5 @@
 using DataPipe.Core;
+using DataPipe.Core.Filters;
 using DataPipe.Core.Middleware;
 using DataPipe.Tests.Support;
 using System;
@@ -17,15 +18,13 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_arrange_aspects_in_correct_execution_order)));
-            sut.Use(new RetryAspect<TestMessage>(3));
-            sut.Use(new TransactionAspect<TestMessage>());
             sut.Run(new NoOpFilter());
 
             // when
             var result = sut.ToString();
 
             // then
-            Assert.Equal("ExceptionAspect`1 -> BasicLoggingAspect`1 -> RetryAspect`1 -> TransactionAspect`1 -> DefaultAspect -> NoOpFilter", result);
+            Assert.Equal("ExceptionAspect`1 -> BasicLoggingAspect`1 -> DefaultAspect -> NoOpFilter", result);
         }
 
         [Fact]
@@ -104,17 +103,38 @@ namespace DataPipe.Tests
             await Assert.ThrowsAsync<NotImplementedException>(async () => await sut.Invoke(msg));
         }
 
+        /// Filters can be composed inline to provide more complex functionality
+        /// that affects only the filters within the current Run statement
         [Fact]
-        public async Task Should_retry_when_using_RetryAspect()
+        public async Task Should_retry_when_using_locally_composed_retry_and_transaction_filters()
         {
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_RetryAspect)));
-            sut.Use(new RetryAspect<TestMessage>(maxRetries: 3));
-            sut.Use(new TransactionAspect<TestMessage>());
-            sut.Run(new MockTimeoutErroringFilter());
-            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_locally_composed_retry_and_transaction_filters)));            
+            sut.Run(new OnTimeoutRetry<TestMessage>(
+                new StartTransaction<TestMessage>(
+                    new MockTimeoutErroringFilter())));
+            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying"), MaxRetries = 2 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.True(msg.Attempt == 3);
+        }
+
+        /// Filters can also be composed inside a purpose-specific filter
+        /// to achieve the same functionaluity as the test above
+        [Fact]
+        public async Task Should_retry_when_using_externally_composed_retry_and_transaction_filters()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_externally_composed_retry_and_transaction_filters)));            
+            sut.Run(new ComposedRetryWithTransactionFilter<TestMessage>(new MockTimeoutErroringFilter()));
+            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying"), MaxRetries = 2 };
 
             // when
             await sut.Invoke(msg);
@@ -130,9 +150,9 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_and_recover_after_one_attempt_when_using_RetryAspect)));
-            sut.Use(new RetryAspect<TestMessage>(maxRetries: 3));
-            sut.Use(new TransactionAspect<TestMessage>());
-            sut.Run(new MockRecoveringTimeoutErroringFilter());
+            sut.Run(new OnTimeoutRetry<TestMessage>(
+                new StartTransaction<TestMessage>(
+                    new MockRecoveringTimeoutErroringFilter())));
             var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
 
             // when
@@ -247,6 +267,26 @@ namespace DataPipe.Tests
 
             // then
             Assert.Equal("this was constructed via multiple passes of the pipeline", msg.Debug.TrimEnd());
+        }
+
+        [Fact]
+        public async Task Should_run_message_through_pipeline_multiple_times_with_Repeat_filter()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_pipeline_multiple_times_with_ForEachAspect)));
+            sut.Run(new Repeat<TestMessage>(
+                new IncrementingNumberFilter(),
+                new IfTrue<TestMessage>(x => x.Debug == "123",
+                    new CancelPipeline<TestMessage>())
+            ));
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.Equal("123", msg.Debug.TrimEnd());
         }
     }
 }

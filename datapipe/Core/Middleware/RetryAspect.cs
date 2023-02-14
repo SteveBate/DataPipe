@@ -7,6 +7,7 @@ namespace DataPipe.Core.Middleware
     /// <summary>
     /// RetryAspect - only retry for issues of contention or latency (represented by EnvironmentException type) 
     /// </summary>
+    [Obsolete("Use the OnTimeoutRetry composable filter and IOnRetry interface instead")]
     public class RetryAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage, IAmRetryable
     {
         public RetryAspect(int maxRetries)

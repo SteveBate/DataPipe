@@ -1,5 +1,7 @@
 using System.Threading.Tasks;
 using DataPipe.Core;
+using DataPipe.Core.Contracts;
+using DataPipe.Core.Filters;
 
 namespace DataPipe.Tests.Support
 {
@@ -91,6 +93,37 @@ namespace DataPipe.Tests.Support
         public Task Execute(TestMessage msg)
         {
             msg.Debug += $"{msg.Instance} ";
+            return Task.CompletedTask;
+        }
+    }
+
+    class IncrementingNumberFilter : Filter<TestMessage>
+    {
+        public Task Execute(TestMessage msg)
+        {
+            msg.Number += 1;
+            msg.Debug += msg.Number.ToString();
+            return Task.CompletedTask;
+        }
+    }
+
+    class ComposedRetryWithTransactionFilter<T> : Filter<T> where T : BaseMessage, IOnRetry, IAmCommittable
+    {
+        private readonly Filter<T>[] _filters;
+        private Filter<T> _scope;
+
+        public ComposedRetryWithTransactionFilter(params Filter<T>[] filters)
+        {
+            _filters = filters;
+            _scope = new OnTimeoutRetry<T>(
+                new StartTransaction<T>(
+                    _filters
+                ));
+        }
+
+        public Task Execute(T msg)
+        {
+            _scope.Execute(msg);
             return Task.CompletedTask;
         }
     }

@@ -1,8 +1,7 @@
-# DataPipe
+# DataPipe 2.0
 
 ## What
-DataPipe is a small opinionated framework for easily implementing the vertical slice architectural style in .Net Core applications.  
-You can find it on nuget as **SCB.DataPipe**
+DataPipe is a small opinionated framework for easily implementing the vertical slice architectural style in .Net Core applications. You can find it on nuget as **SCB.DataPipe**
 
 ## Background
 I've been developing vertical slice architectures since around 2013, mostly taking inspiration from the Pipe and Filters integration pattern and Unix pipes. I first tentatively blogged about it in [messaging as a programming model](https://stevebate.wordpress.com/2013/08/12/messaging-as-a-programming-model-part-1/) but since that time things have moved on a lot with many refinements based on learning and solving issues encountered in my day to day work with this model. 
@@ -101,7 +100,7 @@ public async Task Invoke(CreateBookingMessage msg)
     await pipe.Invoke(msg);
 }
 ```
-From a top level view of the code, this pipeline describes everything. No jumping around between layers to follow the flow, Everything needed to fulfill the request is defined here and hopefully is virtually self-describing. 
+From a top level view of the code, this pipeline describes everything. No jumping around between layers to follow the flow, Everything needed to fulfill the request is defined here and hopefully is self-describing. 
 
 On the other hand you could easily implement an asynchronous messaging pipeline. This next version does some basic validation upfront, sends a command via a message bus to be consumed out-of-process and returns a generated unique id that can be returned to the client, to allow them to poll for the status of the request to create a booking.
 ```csharp
@@ -298,15 +297,15 @@ There are a number of out of the box. ready to use aspects that you can plug in 
 * BasicLoggingAspect
 * ForEachAspect
 * IsFeatureEnabledAspect
-* RetryAspect
-* TransactionAspect
+* ~~RetryAspect~~ - Obsolete - See the **Composable Filters** section below
+* ~~TransactionAspect~~
 * WhileTrueAspect
 
 All of these provide ways to implement more complex pipelines or easily implement sometimes more difficult functionality such as retry operations.
 
 ## Extensions
 
-As custom Aspects (MongoDB, Sql Server, Serilog, etc.) are generally coupled to specific versions of the libraries they represent they are not included in the project. However, the **sample aspects** directory does contain some of those custom aspects that you could use either directly or as examples for your own.
+As custom Aspects (MongoDB, Sql Server, Serilog, etc.) are generally coupled to specific versions of the libraries they represent they are not included in the project. However, the **samples/Aspects** directory does contain some of those custom aspects that you could use either directly or as examples for your own.
 
 The following example shows how simple it is to configure a pipeline to use a mix of these built-in and custom aspects and benefit easily from transaction support, configurable retries, sql server, and logging via Serilog.
 
@@ -322,6 +321,61 @@ The following example shows how simple it is to configure a pipeline to use a mi
     
     await pipe.Invoke(msg);
 ```
+
+## Composable Filters
+
+The big new feature of v2 of Datapipe is the ability to now compose filters inline which not only helps to make things explicit as the implementation is declared right in front of you as opposed to buried in a filter but also that certain operations such as transactions and retries can benefit from being scoped or localised to the filters they directly operate on instead of the whole pipeline which was the only way prior to v2. In other words, you can be far more granular and therefore sure of the intended effect on the pipeline. To this end the previous ```RetryAspect``` and ```TransactionAspect``` aspects have been deprecated and will be removed in a future release as the entirety of it's application can be achieved much more easily with the ```OnTimeoutRetry``` and ```StartTransaction``` filters respectively.
+
+The namespace ```DataPipe.Core.Filters``` contains the new additions that enable this new composable functionality and consists of the following out-of-the-box filters. 
+
+```CancelPipeline```
+
+```IfTrue```
+
+```OnTimeoutRetry```
+
+```Repeat```
+
+```StartTransaction```
+
+You are, of course, free to create your own by simply copying the way these are implemented. Check out the **samples/Filters** directory for two otehr useful implementations.
+
+The following example pipeline loads orders from a table one at a time (SELECT TOP 1 *) into JSON files, updates the table to mark each one as processed i.e. loaded and written to disk, and then uploads the created files to an SFTP server. The actual implementation details are unimportant. The point here is to show how the new composable filters are constructed to provide a targeted scope for their capabilities.
+
+```
+public static async Task ProcessOrders(SpeedOrderMessage msg)
+{
+    msg.ProcessName = "ProcessOrders";
+    msg.OnStart = (x) => Console.WriteLine("Invoking ProcessOrders");
+    msg.OnSuccess = (x) => Console.WriteLine("ProcessOrders completed");
+    msg.OnError = (x, y) => Console.WriteLine("ERROR - See Log for details");
+
+    var pipe = new DataPipe<SpeedOrderMessage>();
+    pipe.Use(new DatabaseLoggingAspect<SpeedOrderMessage>());
+    pipe.Use(new SerilogAspect<SpeedOrderMessage>("OrdersLog"));
+    pipe.Run(
+        new OnTimeoutRetry<SpeedOrderMessage>(
+            new OpenSqlConnection<SpeedOrderMessage>(
+                new Repeat<SpeedOrderMessage>(
+                    new LoadClientOrders(), // reads JSON and writes to disk
+                    new MarkSpeedOrderAsProcessed()))));
+    pipe.Run(
+        new OnTimeoutRetry<SpeedOrderMessage>(
+            new OpenSftpConnection<SpeedOrderMessage>(
+                new UploadOrdersToSpeed())));
+
+    await pipe.Invoke(msg);
+}
+```
+
+As you can see ```OnTimeoutRetry``` wraps ```OpenSqlConnection``` which wraps the ```Repeat``` filter. This in turn, has the actual business logic of loading an order and marking it as processed in the same table. The Repeat filter will execute as a loop until there are no more orders to read. All of this takes place in the context of a single ```pipe.Run(...)``` outer filter.
+
+Once the orders have been read and converted to files on disk, the next ```pipe.Run(...)``` filter starts another composition. This time, a new ```OnTimeoutRetry``` filter wraps the ```OpenSftpConnection``` filter which in turn contains the logic to upload the files on disk
+
+In both cases the logic of actual work required by the business is served by the need for either a sql or sftp connection right at the point of need (rather than being open for the entire pipeline's lifetime) but also protected by network timeouts so that it can automaticaly retry a number of times (default 3) before continuing or giving up.
+
+In this example the whole pipeline is wrapped by an Aspect to log (availble to every filter) using Serilog but also a top level exception handler which records uncaught errors and writes them to a table elsewhere.
+
 ## What Now?
 
 Hopefully this has given you an idea of how to try using the vertical slice architectural style in your applications. 

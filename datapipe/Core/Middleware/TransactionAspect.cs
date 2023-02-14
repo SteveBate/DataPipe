@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using System.Transactions;
 using DataPipe.Core.Contracts;
@@ -9,6 +10,7 @@ namespace DataPipe.Core.Middleware
     /// then the transaction will be commited at the end of the slice. If an exception occurs the transaction is automatically rolled back and the
     /// exception is passed on up the chain
     /// </summary>
+    [Obsolete("Use the StartTransaction composable filter and IAmCommittable interface instead")]
     public class TransactionAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage, IAmCommittable
     {
         private readonly bool _enlist;
