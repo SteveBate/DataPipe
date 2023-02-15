@@ -358,7 +358,7 @@ public static async Task ProcessOrders(OrderMessage msg)
             new OpenSqlConnection<OrderMessage>(
                 new Repeat<OrderMessage>(
                     new LoadClientOrders(), // reads JSON and writes to disk
-                    new MarkSpeedOrderAsProcessed()))));
+                    new MarkOrderAsProcessed()))));
     pipe.Run(
         new OnTimeoutRetry<OrderMessage>(
             new OpenSftpConnection<OrderMessage>(
