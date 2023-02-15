@@ -324,7 +324,7 @@ The following example shows how simple it is to configure a pipeline to use a mi
 
 ## Composable Filters
 
-The big new feature of v2 of Datapipe is the ability to now compose filters inline which not only helps to make things explicit as the implementation is declared right in front of you as opposed to buried in a filter but also that certain operations such as transactions and retries can benefit from being scoped or localised to the filters they directly operate on instead of the whole pipeline which was the only way prior to v2. In other words, you can be far more granular and therefore sure of the intended effect on the pipeline. To this end the previous ```RetryAspect``` and ```TransactionAspect``` aspects have been deprecated and will be removed in a future release as the entirety of it's application can be achieved much more easily with the ```OnTimeoutRetry``` and ```StartTransaction``` filters respectively.
+The big new feature of v2 of Datapipe is the ability to now compose filters inline which not only helps to make things explicit as the implementation is declared right in front of you as opposed to buried in a filter but also that certain operations such as transactions and retries can benefit from being scoped or localised to the filters they directly operate on instead of the whole pipeline which was the only way prior to v2. In other words, you can be far more granular and therefore sure of the intended effect on the pipeline. To this end the previous ```RetryAspect``` and ```TransactionAspect``` aspects have been deprecated and will be removed in a future release as the entirety of their functionality can be achieved much more easily with the ```OnTimeoutRetry``` and ```StartTransaction``` filters respectively.
 
 The namespace ```DataPipe.Core.Filters``` contains the new additions that enable this new composable functionality and consists of the following out-of-the-box filters. 
 
@@ -338,31 +338,31 @@ The namespace ```DataPipe.Core.Filters``` contains the new additions that enable
 
 ```StartTransaction```
 
-You are, of course, free to create your own by simply copying the way these are implemented. Check out the **samples/Filters** directory for two otehr useful implementations.
+You are, of course, free to create your own by simply copying the way these are implemented. Check out the **samples/Filters** directory for two other useful implementations.
 
 The following example pipeline loads orders from a table one at a time (SELECT TOP 1 *) into JSON files, updates the table to mark each one as processed i.e. loaded and written to disk, and then uploads the created files to an SFTP server. The actual implementation details are unimportant. The point here is to show how the new composable filters are constructed to provide a targeted scope for their capabilities.
 
 ```
-public static async Task ProcessOrders(SpeedOrderMessage msg)
+public static async Task ProcessOrders(OrderMessage msg)
 {
     msg.ProcessName = "ProcessOrders";
     msg.OnStart = (x) => Console.WriteLine("Invoking ProcessOrders");
     msg.OnSuccess = (x) => Console.WriteLine("ProcessOrders completed");
     msg.OnError = (x, y) => Console.WriteLine("ERROR - See Log for details");
 
-    var pipe = new DataPipe<SpeedOrderMessage>();
-    pipe.Use(new DatabaseLoggingAspect<SpeedOrderMessage>());
-    pipe.Use(new SerilogAspect<SpeedOrderMessage>("OrdersLog"));
+    var pipe = new DataPipe<OrderMessage>();
+    pipe.Use(new DatabaseLoggingAspect<OrderMessage>());
+    pipe.Use(new SerilogAspect<OrderMessage>("OrdersLog"));
     pipe.Run(
-        new OnTimeoutRetry<SpeedOrderMessage>(
-            new OpenSqlConnection<SpeedOrderMessage>(
-                new Repeat<SpeedOrderMessage>(
+        new OnTimeoutRetry<OrderMessage>(
+            new OpenSqlConnection<OrderMessage>(
+                new Repeat<OrderMessage>(
                     new LoadClientOrders(), // reads JSON and writes to disk
                     new MarkSpeedOrderAsProcessed()))));
     pipe.Run(
-        new OnTimeoutRetry<SpeedOrderMessage>(
-            new OpenSftpConnection<SpeedOrderMessage>(
-                new UploadOrdersToSpeed())));
+        new OnTimeoutRetry<OrderMessage>(
+            new OpenSftpConnection<OrderMessage>(
+                new UploadOrders())));
 
     await pipe.Invoke(msg);
 }
