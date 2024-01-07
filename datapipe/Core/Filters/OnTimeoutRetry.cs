@@ -5,17 +5,20 @@ using DataPipe.Core.Contracts;
 
 namespace DataPipe.Core.Filters
 {
-    public class OnTimeoutRetry<T> : Filter<T> where T : BaseMessage, IOnRetry
+    public class OnTimeoutRetry<T> : Filter<T> where T : BaseMessage
     {
         private readonly Filter<T>[] _filters;
+        private int _maxRetries;
 
-        public OnTimeoutRetry(params Filter<T>[] filters)
+        public OnTimeoutRetry(int maxRetries, params Filter<T>[] filters)
         {
             _filters = filters;
+            _maxRetries = maxRetries;
         }
 
         public async Task Execute(T msg)
         {
+            msg.MaxRetries = _maxRetries;
             msg.Attempt = 1;
             
         start:

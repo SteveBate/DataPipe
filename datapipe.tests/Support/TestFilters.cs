@@ -107,7 +107,7 @@ namespace DataPipe.Tests.Support
         }
     }
 
-    class ComposedRetryWithTransactionFilter<T> : Filter<T> where T : BaseMessage, IOnRetry, IAmCommittable
+    class ComposedRetryWithTransactionFilter<T> : Filter<T> where T : BaseMessage, IAmCommittable
     {
         private readonly Filter<T>[] _filters;
         private Filter<T> _scope;
@@ -115,10 +115,7 @@ namespace DataPipe.Tests.Support
         public ComposedRetryWithTransactionFilter(params Filter<T>[] filters)
         {
             _filters = filters;
-            _scope = new OnTimeoutRetry<T>(
-                new StartTransaction<T>(
-                    _filters
-                ));
+            _scope = new OnTimeoutRetry<T>(3, new StartTransaction<T>(_filters));
         }
 
         public Task Execute(T msg)

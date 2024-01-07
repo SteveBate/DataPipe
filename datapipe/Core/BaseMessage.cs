@@ -1,5 +1,8 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
+
+[assembly: InternalsVisibleTo("datapipe.tests")]
 
 namespace DataPipe.Core
 {
@@ -8,6 +11,8 @@ namespace DataPipe.Core
     /// </summary>
     public abstract class BaseMessage
     {
+        internal int Attempt { get; set; }
+        internal int MaxRetries { get; set; } = 3;
         [JsonIgnore] public int StatusCode { get; set; } = 200;
         [JsonIgnore] public string StatusMessage { get; set; } = string.Empty;
         [JsonIgnore] public CancellationToken CancellationToken { get; } = new CancellationToken();
