@@ -3,7 +3,7 @@ using DataPipe.Core.Contracts;
 
 namespace DataPipe.Core.Middleware
 {
-    public class IsFeatureEnabledAspect<T, TS> : Aspect<T>, Filter<T> where T : BaseMessage, IAttachState<TS>
+    public class IsFeatureEnabledAspect<T, TS> : Aspect<T>, Filter<T> where T : BaseMessage, IInstanceOf<TS>
     {
         public IsFeatureEnabledAspect(string propName)
         {

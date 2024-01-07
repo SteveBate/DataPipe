@@ -4,7 +4,7 @@ using DataPipe.Core.Contracts;
 
 namespace DataPipe.Tests.Support
 {
-    class TestMessage : BaseMessage, IAmCommittable, IAttachState<string>
+    class TestMessage : BaseMessage, IAmCommittable, IInstanceOf<string>
     {
         public Action<int> OnRetrying { get; set; }
         public bool Commit { get; set; }

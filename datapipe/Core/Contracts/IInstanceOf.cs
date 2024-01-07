@@ -1,6 +1,6 @@
 namespace DataPipe.Core.Contracts
 {
-    public interface IAttachState<T>
+    public interface IInstanceOf<T>
     {
          T Instance { get; set; }
     }

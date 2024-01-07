@@ -5,7 +5,7 @@ using DataPipe.Core.Contracts;
 
 namespace DataPipe.Core.Middleware
 {
-    public class ForEachAspect<T,T2> : Aspect<T>, Filter<T> where T : BaseMessage, IAttachState<T2>
+    public class ForEachAspect<T,T2> : Aspect<T>, Filter<T> where T : BaseMessage, IInstanceOf<T2>
     {
         public ForEachAspect(Func<IEnumerable<T2>> callback)
         {
