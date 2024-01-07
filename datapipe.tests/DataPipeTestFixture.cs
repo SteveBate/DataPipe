@@ -112,10 +112,10 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_locally_composed_retry_and_transaction_filters)));            
-            sut.Run(new OnTimeoutRetry<TestMessage>(2,
+            sut.Run(new OnTimeoutRetry<TestMessage>(3,
                         new StartTransaction<TestMessage>(
                             new MockTimeoutErroringFilter())));
-            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying"), MaxRetries = 2 };
+            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
 
             // when
             await sut.Invoke(msg);
@@ -130,11 +130,12 @@ namespace DataPipe.Tests
         public async Task Should_retry_when_using_externally_composed_retry_and_transaction_filters()
         {
             // given
+            var maxRetries = 3;
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_externally_composed_retry_and_transaction_filters)));            
-            sut.Run(new ComposedRetryWithTransactionFilter<TestMessage>(new MockTimeoutErroringFilter()));
-            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying"), MaxRetries = 2 };
+            sut.Run(new ComposedRetryWithTransactionFilter<TestMessage>(maxRetries, new MockTimeoutErroringFilter()));
+            var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
 
             // when
             await sut.Invoke(msg);
@@ -147,10 +148,11 @@ namespace DataPipe.Tests
         public async Task Should_retry_and_recover_after_one_attempt_when_using_RetryAspect()
         {
             // given
+            var maxRetries = 3;
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_and_recover_after_one_attempt_when_using_RetryAspect)));
-            sut.Run(new OnTimeoutRetry<TestMessage>(3,
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_and_recover_after_one_attempt_when_using_retry_filter)));
+            sut.Run(new OnTimeoutRetry<TestMessage>(maxRetries,
                         new StartTransaction<TestMessage>(
                             new MockRecoveringTimeoutErroringFilter())));
             var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };

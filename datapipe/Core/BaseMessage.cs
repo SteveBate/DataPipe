@@ -11,8 +11,6 @@ namespace DataPipe.Core
     /// </summary>
     public abstract class BaseMessage
     {
-        internal int Attempt { get; set; }
-        internal int MaxRetries { get; set; } = 3;
         [JsonIgnore] public int StatusCode { get; set; } = 200;
         [JsonIgnore] public string StatusMessage { get; set; } = string.Empty;
         [JsonIgnore] public CancellationToken CancellationToken { get; } = new CancellationToken();
@@ -21,6 +19,8 @@ namespace DataPipe.Core
         [JsonIgnore] public Action<BaseMessage> OnComplete = delegate { };
         [JsonIgnore] public Action<BaseMessage> OnSuccess = delegate { };
         [JsonIgnore] public Action<string> OnLog = delegate { };
-        internal string Debug { get; set; }
+        internal string __Debug { get; set; }
+        internal int __Attempt { get; set; }
+        internal int __MaxRetries { get; set; }
     }
 }

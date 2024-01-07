@@ -61,7 +61,7 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            if (msg.Attempt < 1)
+            if (msg.__Attempt < 1)
             {
                 throw new System.Exception("timeout");
             }
@@ -83,7 +83,7 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            msg.Debug = "AlwaysRunFilter";
+            msg.__Debug = "AlwaysRunFilter";
             return Task.CompletedTask;
         }
     }
@@ -92,7 +92,7 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            msg.Debug += $"{msg.Instance} ";
+            msg.__Debug += $"{msg.Instance} ";
             return Task.CompletedTask;
         }
     }
@@ -102,7 +102,7 @@ namespace DataPipe.Tests.Support
         public Task Execute(TestMessage msg)
         {
             msg.Number += 1;
-            msg.Debug += msg.Number.ToString();
+            msg.__Debug += msg.Number.ToString();
             return Task.CompletedTask;
         }
     }
@@ -112,10 +112,10 @@ namespace DataPipe.Tests.Support
         private readonly Filter<T>[] _filters;
         private Filter<T> _scope;
 
-        public ComposedRetryWithTransactionFilter(params Filter<T>[] filters)
+        public ComposedRetryWithTransactionFilter(int maxRetries, params Filter<T>[] filters)
         {
             _filters = filters;
-            _scope = new OnTimeoutRetry<T>(3, new StartTransaction<T>(_filters));
+            _scope = new OnTimeoutRetry<T>(maxRetries, new StartTransaction<T>(_filters));
         }
 
         public Task Execute(T msg)

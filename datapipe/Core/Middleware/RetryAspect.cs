@@ -7,7 +7,7 @@ namespace DataPipe.Core.Middleware
     /// <summary>
     /// RetryAspect - only retry for issues of contention or latency (represented by EnvironmentException type) 
     /// </summary>
-    [Obsolete("Use the OnTimeoutRetry composable filter and IOnRetry interface instead")]
+    [Obsolete("Use the OnTimeoutRetry composable filter instead")]
     public class RetryAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage, IAmRetryable
     {
         public RetryAspect(int maxRetries)
@@ -25,14 +25,14 @@ namespace DataPipe.Core.Middleware
             {
                 if (ex.Message.Contains("transport-level error") || ex.Message.Contains("deadlocked") || ex.Message.Contains("timeout"))
                 {
-                    if (msg.Attempt < _maxRetries)
+                    if (msg.__Attempt < _maxRetries)
                     {
-                        msg.Attempt++;
+                        msg.__Attempt++;
                         msg.OnLog?.Invoke($"Retry handler detected an environmental issue: {ex.Message}");
-                        msg.OnLog?.Invoke($"Retry attempt {msg.Attempt} in {(waitPeriod * msg.Attempt) / 1000} seconds");
-                        await Task.Delay(waitPeriod * msg.Attempt);
-                        msg.OnRetrying?.Invoke(msg.Attempt);
-                        msg.LastAttempt = msg.Attempt == _maxRetries;
+                        msg.OnLog?.Invoke($"Retry attempt {msg.__Attempt} in {(waitPeriod * msg.__Attempt) / 1000} seconds");
+                        await Task.Delay(waitPeriod * msg.__Attempt);
+                        msg.OnRetrying?.Invoke(msg.__Attempt);
+                        msg.LastAttempt = msg.__Attempt == _maxRetries;
                         await Execute(msg);
                         msg.OnLog?.Invoke("Retry successful");
                     }

@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using DataPipe.Core.Contracts;
 
 namespace DataPipe.Core.Filters
 {
@@ -18,8 +17,8 @@ namespace DataPipe.Core.Filters
 
         public async Task Execute(T msg)
         {
-            msg.MaxRetries = _maxRetries;
-            msg.Attempt = 1;
+            msg.__MaxRetries = _maxRetries;
+            msg.__Attempt = 1;
             
         start:
             try
@@ -51,11 +50,11 @@ namespace DataPipe.Core.Filters
 
         private static bool TryAgain(T msg, Exception ex)
         {
-            if (msg.Attempt <= msg.MaxRetries)
+            if (msg.__Attempt < msg.__MaxRetries)
             {
                 msg.OnLog?.Invoke($"Failed to connect to {ex.Source} - retrying...");
-                Thread.Sleep(msg.Attempt * 2000); // sliding retry interval
-                msg.Attempt += 1;
+                Thread.Sleep(msg.__Attempt * 2000); // sliding retry interval
+                msg.__Attempt += 1;
                 return true;
             }
 
