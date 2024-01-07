@@ -2,16 +2,17 @@ using DataPipe.Core;
 using DataPipe.Core.Filters;
 using DataPipe.Core.Middleware;
 using DataPipe.Tests.Support;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Xunit;
 
 namespace DataPipe.Tests
 {
+    [TestClass]
     public class DataPipeTestFixture
     {
-        [Fact]
+        [TestMethod]
         public void Should_arrange_aspects_in_correct_execution_order()
         {
             // given
@@ -24,10 +25,10 @@ namespace DataPipe.Tests
             var result = sut.ToString();
 
             // then
-            Assert.Equal("ExceptionAspect`1 -> BasicLoggingAspect`1 -> DefaultAspect -> NoOpFilter", result);
+            Assert.AreEqual("ExceptionAspect`1 -> BasicLoggingAspect`1 -> DefaultAspect -> NoOpFilter", result);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_notify_when_started()
         {
             // given
@@ -39,10 +40,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("started", msg.StatusMessage);
+            Assert.AreEqual("started", msg.StatusMessage);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_notify_when_successful()
         {
             // given
@@ -54,10 +55,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("success", msg.StatusMessage);
+            Assert.AreEqual("success", msg.StatusMessage);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_notify_when_complete()
         {
             // given
@@ -69,10 +70,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("complete", msg.StatusMessage);
+            Assert.AreEqual("complete", msg.StatusMessage);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_notify_error_when_using_exception_middleware()
         {
             // given
@@ -86,11 +87,11 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("error", msg.StatusMessage);
-            Assert.Equal(500, msg.StatusCode);
+            Assert.AreEqual("error", msg.StatusMessage);
+            Assert.AreEqual(500, msg.StatusCode);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_propagate_error_when_not_using_exception_middleware()
         {
             // given
@@ -100,12 +101,12 @@ namespace DataPipe.Tests
             var msg = new TestMessage();
 
             // when
-            await Assert.ThrowsAsync<NotImplementedException>(async () => await sut.Invoke(msg));
+            await Assert.ThrowsExceptionAsync<NotImplementedException>(async () => await sut.Invoke(msg));
         }
 
         /// Filters can be composed inline to provide more complex functionality
         /// that affects only the filters within the current Run statement
-        [Fact]
+        [TestMethod]
         public async Task Should_retry_when_using_locally_composed_retry_and_transaction_filters()
         {
             // given
@@ -121,12 +122,12 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.True(msg.Attempt == 3);
+            Assert.IsTrue(msg.__Attempt == 3);
         }
 
         /// Filters can also be composed inside a purpose-specific filter
         /// to achieve the same functionaluity as the test above
-        [Fact]
+        [TestMethod]
         public async Task Should_retry_when_using_externally_composed_retry_and_transaction_filters()
         {
             // given
@@ -141,11 +142,11 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.True(msg.Attempt == 3);
+            Assert.IsTrue(msg.__Attempt == 3);
         }
 
-        [Fact]
-        public async Task Should_retry_and_recover_after_one_attempt_when_using_RetryAspect()
+        [TestMethod]
+        public async Task Should_retry_and_recover_after_one_attempt_when_using_retry_filter()
         {
             // given
             var maxRetries = 3;
@@ -161,10 +162,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.True(msg.Attempt == 1);
+            Assert.IsTrue(msg.__Attempt == 1);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_not_succeed_when_pipeline_cancelled_manually()
         {
             // given
@@ -179,10 +180,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.False(success);
+            Assert.IsFalse(success);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_report_reason_when_pipeline_cancelled_manually()
         {
             // given
@@ -196,11 +197,11 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.True(msg.CancellationToken.Stopped);
-            Assert.Contains("User cancelled operation", msg.CancellationToken.Reason);
+            Assert.IsTrue(msg.CancellationToken.Stopped);
+            Assert.IsTrue(msg.CancellationToken.Reason.Contains("User cancelled operation"));
         }    
 
-        [Fact]
+        [TestMethod]
         public async Task Should_run_finally_filters_when_pipeline_succeeds()
         {
             // given
@@ -214,10 +215,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("AlwaysRunFilter", msg.Debug);
+            Assert.AreEqual("AlwaysRunFilter", msg.__Debug);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_run_finally_filters_when_pipeline_cancelled()
         {
             // given
@@ -231,10 +232,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("AlwaysRunFilter", msg.Debug);
+            Assert.AreEqual("AlwaysRunFilter", msg.__Debug);
         }    
     
-        [Fact]
+        [TestMethod]
         public async Task Should_run_finally_filters_when_pipeline_errors()
         {
             // given
@@ -249,10 +250,10 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("AlwaysRunFilter", msg.Debug);
+            Assert.AreEqual("AlwaysRunFilter", msg.__Debug);
         }
 
-        [Fact]
+        [TestMethod]
         public async Task Should_run_message_through_pipeline_multiple_times_with_ForEachAspect()
         {
             var words = new[] { "this", "was", "constructed", "via", "multiple", "passes", "of", "the", "pipeline" };
@@ -268,18 +269,18 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("this was constructed via multiple passes of the pipeline", msg.Debug.TrimEnd());
+            Assert.AreEqual("this was constructed via multiple passes of the pipeline", msg.__Debug.TrimEnd());
         }
 
-        [Fact]
-        public async Task Should_run_message_through_pipeline_multiple_times_with_Repeat_filter()
+        [TestMethod]
+        public async Task Should_run_message_through_pipeline_multiple_times_until_cancellation_token_is_set()
         {
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_pipeline_multiple_times_with_ForEachAspect)));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_pipeline_multiple_times_until_cancellation_token_is_set)));
             sut.Run(new Repeat<TestMessage>(
                 new IncrementingNumberFilter(),
-                new IfTrue<TestMessage>(x => x.Debug == "123",
+                new IfTrue<TestMessage>(x => x.__Debug == "123",
                     new CancelPipeline<TestMessage>())
             ));
             var msg = new TestMessage();
@@ -288,7 +289,30 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.Equal("123", msg.Debug.TrimEnd());
+            Assert.AreEqual("123", msg.__Debug.TrimEnd());
+        }
+
+        [TestMethod]
+        public async Task Should_run_message_through_pipeline_multiple_times_until_condition_is_met()
+        {
+            var x = 5;
+            var f = () => {--x; return x == 0; };
+
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_pipeline_multiple_times_until_condition_is_met)));
+            sut.Run(new RepeatUntil<TestMessage>(x => f(),
+                new IncrementingNumberFilter(),
+                new IfTrue<TestMessage>(x => x.__Debug == "12345",
+                    new CancelPipeline<TestMessage>())
+            ));
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("12345", msg.__Debug.TrimEnd());
         }
     }
 }
