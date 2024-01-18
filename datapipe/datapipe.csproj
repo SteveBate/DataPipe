@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <PackageId>SCB.DataPipe</PackageId>
-    <Version>2.1</Version>
+    <Version>2.1.1</Version>
     <VersionSuffix>alpha</VersionSuffix>
     <Authors>Stephen C. Bate</Authors>
     <PackageTags>Pipe and Filters;Vertical Slice;Pipelines</PackageTags>

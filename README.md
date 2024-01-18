@@ -1,4 +1,4 @@
-# DataPipe 2.0
+# DataPipe 2
 
 ## What
 DataPipe is a small opinionated framework for easily implementing the vertical slice architectural style in .Net Core applications. You can find it on nuget as **SCB.DataPipe**
