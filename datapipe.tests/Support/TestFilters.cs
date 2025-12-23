@@ -1,7 +1,10 @@
+using System.Net.Http;
 using System.Threading.Tasks;
 using DataPipe.Core;
 using DataPipe.Core.Contracts;
 using DataPipe.Core.Filters;
+using DataPipe.Sql.Contracts;
+using DataPipe.Sql.Filters;
 
 namespace DataPipe.Tests.Support
 {
@@ -57,11 +60,19 @@ namespace DataPipe.Tests.Support
         }
     }
 
+    class MockHttpErroringFilter : Filter<TestMessage>
+    {
+        public Task Execute(TestMessage msg)
+        {
+            throw new HttpRequestException(HttpRequestError.InvalidResponse.ToString());
+        }
+    }
+
     class MockRecoveringTimeoutErroringFilter : Filter<TestMessage>
     {
         public Task Execute(TestMessage msg)
         {
-            if (msg.__Attempt < 1)
+            if (msg.Attempt < 1)
             {
                 throw new System.Exception("timeout");
             }
@@ -74,7 +85,7 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            msg.CancellationToken.Stop("User cancelled operation");
+            msg.Execution.Stop("User cancelled operation");
             return Task.CompletedTask;
         }
     }
@@ -107,7 +118,17 @@ namespace DataPipe.Tests.Support
         }
     }
 
-    class ComposedRetryWithTransactionFilter<T> : Filter<T> where T : BaseMessage, IAmCommittable
+    class DecrementingNumberFilter : Filter<TestMessage>
+    {
+        public Task Execute(TestMessage msg)
+        {
+            msg.Number -= 1;
+            msg.__Debug += msg.Number.ToString();
+            return Task.CompletedTask;
+        }
+    }
+
+    class ComposedRetryWithTransactionFilter<T> : Filter<T> where T : BaseMessage, IAmCommittable, IAmRetryable
     {
         private readonly Filter<T>[] _filters;
         private Filter<T> _scope;
@@ -118,10 +139,9 @@ namespace DataPipe.Tests.Support
             _scope = new OnTimeoutRetry<T>(maxRetries, new StartTransaction<T>(_filters));
         }
 
-        public Task Execute(T msg)
+        public async Task Execute(T msg)
         {
-            _scope.Execute(msg);
-            return Task.CompletedTask;
+            await _scope.Execute(msg);
         }
     }
 }

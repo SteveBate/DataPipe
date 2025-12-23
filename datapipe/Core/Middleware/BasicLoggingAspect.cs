@@ -5,7 +5,8 @@ using System.Threading.Tasks;
 namespace DataPipe.Core.Middleware
 {
     /// <summary>
-    /// BasicLoggingAspect invokes the BaseMessage OnStep delegate
+    /// BasicLoggingAspect invokes the BaseMessage OnStep delegate and writes to console.
+    /// Use this as a guide to create custom logging aspects that log to files, monitoring systems, etc.
     /// </summary>
     public class BasicLoggingAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage
     {

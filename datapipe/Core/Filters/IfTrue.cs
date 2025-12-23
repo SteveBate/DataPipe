@@ -3,6 +3,10 @@ using System.Threading.Tasks;
 
 namespace DataPipe.Core.Filters
 {
+    /// <summary>
+    /// IfTrue allows you to conditionally execute one or more filters i.e. branching logic within a pipeline.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
     public class IfTrue<T> : Filter<T> where T : BaseMessage
     {
         private readonly Func<T, bool> _callback;
