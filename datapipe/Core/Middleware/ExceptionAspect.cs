@@ -24,6 +24,6 @@ namespace DataPipe.Core.Middleware
             }
         }
 
-        public Aspect<T> Next { get; set; }
+        public Aspect<T> Next { get; set; } = default!;
     }
 }

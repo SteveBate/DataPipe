@@ -42,10 +42,10 @@ namespace DataPipe.Core.Filters
         private readonly int _maxRetries;
 
         // Optional function to determine if an exception should trigger a retry
-        private readonly Func<Exception, T, bool>? _retryWhen;
+        private readonly Func<Exception, T, bool> _retryWhen;
 
         // Optional function to determine the delay before retrying (sliding, exponential, etc.)
-        private readonly Func<int, T, TimeSpan>? _defaultDelay;
+        private readonly Func<int, T, TimeSpan> _defaultDelay;
 
         public OnTimeoutRetry(
             int maxRetries,

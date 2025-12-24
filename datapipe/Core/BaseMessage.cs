@@ -38,7 +38,7 @@ namespace DataPipe.Core
         [JsonIgnore] public Action<string> OnLog = delegate { };
 
         // --- Internals (for debugging) ---
-        internal string __Debug { get; set; }
+        internal string? __Debug { get; set; }
 
         // --- Constructor for async support ---
         protected BaseMessage(CancellationToken? token = null)

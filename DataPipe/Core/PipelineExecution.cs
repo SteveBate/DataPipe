@@ -8,9 +8,9 @@ namespace DataPipe.Core
     public class PipelineExecution
     {
         public bool IsStopped { get; private set; }
-        public string Reason { get; private set; }
+        public string? Reason { get; private set; }
 
-        public void Stop(string reason = "")
+        public void Stop(string? reason = null)
         {
             IsStopped = true;
             Reason = reason;

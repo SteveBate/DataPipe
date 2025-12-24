@@ -10,11 +10,12 @@ namespace DataPipe.Core.Middleware
     /// </summary>
     public class BasicLoggingAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage
     {
-        private readonly string title;
+        private readonly string? title;
 
-        public BasicLoggingAspect(string title = null)
+        public BasicLoggingAspect(string? title = null)
         {
             this.title = title;
+            Next = default!;
         }
 
         public async Task Execute(T msg)

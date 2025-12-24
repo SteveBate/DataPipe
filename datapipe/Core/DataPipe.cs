@@ -132,8 +132,8 @@ namespace DataPipe.Core
         private class DefaultAspect : Aspect<T>, Filter<T>
         {
             private readonly Func<T, Task> _inner;
-            public DefaultAspect(Func<T, Task> action) => _inner = action;
-            public Aspect<T> Next { get; set; }
+            public DefaultAspect(Func<T, Task> action) => _inner = action ?? throw new ArgumentNullException(nameof(action));
+            public Aspect<T> Next { get; set; } = default!;
             public async Task Execute(T msg) => await _inner(msg);
         }
 
