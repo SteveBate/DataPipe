@@ -1,13 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.1.11304.174 d18.0
+VisualStudioVersion = 18.1.11304.174
 MinimumVisualStudioVersion = 15.0.26124.0
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataPipe", "DataPipe\DataPipe.csproj", "{DA90A6C9-A941-4264-AA14-0695CC76C2B6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataPipe.Tests", "DataPipe.tests\DataPipe.Tests.csproj", "{43EC4BF2-AA2A-4EBF-8D4F-3E11AFECD672}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataPipe.Sql", "DataPipe.Sql\DataPipe.Sql.csproj", "{373AF16D-06E3-49DC-BE30-DE85468F5A90}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataPipe.EntityFramework", "DataPipe.EntityFramework\DataPipe.EntityFramework.csproj", "{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -55,6 +57,18 @@ Global
 		{373AF16D-06E3-49DC-BE30-DE85468F5A90}.Release|x64.Build.0 = Release|Any CPU
 		{373AF16D-06E3-49DC-BE30-DE85468F5A90}.Release|x86.ActiveCfg = Release|Any CPU
 		{373AF16D-06E3-49DC-BE30-DE85468F5A90}.Release|x86.Build.0 = Release|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Debug|x64.Build.0 = Debug|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Debug|x86.Build.0 = Debug|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Release|x64.ActiveCfg = Release|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Release|x64.Build.0 = Release|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Release|x86.ActiveCfg = Release|Any CPU
+		{35EBA397-DD9E-405D-8BCB-54EE9B5D3716}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

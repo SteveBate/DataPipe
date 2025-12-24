@@ -19,6 +19,7 @@ Whether you're integrating with client systems, processing batches, building rea
 - **Flow Control** stop pipeline execution safely with `PipelineExecution.Stop()`.  
 - **Integration Friendly** works well with APIs, console apps, background services, WinForms, and more.  
 - **Minimal Footprint** small, maintainable, and easy for teams to learn.  
+- **Support Packages** DataPipe.Sql for SQL connection and transaction management, DataPipe.EntityFramework for EF DbContext transactions.  
 
 DataPipe is **fully open-source** and ready to plug into your .NET projects today.
 
