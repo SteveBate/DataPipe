@@ -401,8 +401,8 @@ public async Task RunOrderPipeline()
     var pipeline = new DataPipe<OrderMessage>();
 
     // Cross-cutting concerns
+	pipeline.Use(new ExceptionAspect<OrderMessage>());
     pipeline.Use(new BasicLoggingAspect<OrderMessage>());
-    pipeline.Use(new ExceptionAspect<OrderMessage>());
 
     // Retryable filter: OnTimeoutRetry will automatically call msg.OnRetrying on each retry
     pipeline.Run(
@@ -445,7 +445,7 @@ public async Task RunOrderPipeline()
                 │
                 ▼
     ┌────────────────────────────┐
-    │ Logging + Exception Aspect │
+    │ Exception + Logging Aspect │
     └───────────┬────────────────┘
                 │
                 ▼
