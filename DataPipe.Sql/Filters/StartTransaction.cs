@@ -33,9 +33,9 @@ namespace DataPipe.Sql.Filters
         private readonly IsolationLevel _isolationLevel;
         private readonly Filter<T>[] _filters;
         
-        public StartTransaction(params Filter<T>[] filters) : this(IsolationLevel.ReadCommitted, filters)
+        public StartTransaction(params Filter<T>[] filters) 
+            : this(IsolationLevel.ReadCommitted, filters)
         {
-            _filters = filters;
         }
 
         public StartTransaction(IsolationLevel isolationLevel, params Filter<T>[] filters)
@@ -50,19 +50,32 @@ namespace DataPipe.Sql.Filters
 
             using (var scope = new TransactionScope(TransactionScopeOption.RequiresNew, options, TransactionScopeAsyncFlowOption.Enabled))
             {
-                msg.OnLog?.Invoke("- TRANSACTION STARTED");
+                msg.OnLog?.Invoke("TRANSACTION STARTED");
 
-                foreach (var f in _filters)
+                try
                 {
-                    if (msg.Execution.IsStopped) break;
+                    foreach (var f in _filters)
+                    {
+                        if (msg.Execution.IsStopped) break;
 
-                    await f.Execute(msg);
+                        await f.Execute(msg);
+                    }
+
+                    if (msg.Commit)
+                    {
+                        scope.Complete();
+                        msg.OnLog?.Invoke("TRANSACTION COMMITTED");
+                    }
+                    else
+                    {
+                        msg.OnLog?.Invoke("TRANSACTION ROLLED BACK (msg.Commit = false)");
+                    }
                 }
-
-                if (msg.Commit)
+                catch (System.Exception ex)
                 {
-                    scope.Complete();
-                    msg.OnLog?.Invoke("- TRANSACTION COMMITTED");
+                    msg.OnLog?.Invoke($"TRANSACTION ROLLED (EXCEPTION: {ex.Message})");
+                    throw;
+
                 }
             }
         }

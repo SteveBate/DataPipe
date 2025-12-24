@@ -37,7 +37,14 @@ namespace DataPipe.Sql.Filters
         public async Task Execute(T msg)
         {
             using var cnn = new SqlConnection(connectionString);
-            await cnn.OpenAsync();
+            await cnn.OpenAsync(msg.CancellationToken);
+
+            if (msg.Command != null)
+            {
+                msg.OnLog?.Invoke("WARNING: msg.Command was already set. Overwriting existing command.");
+            }
+
+            msg.OnLog?.Invoke("SQL CONNECTION OPENED");
             using (msg.Command = cnn.CreateCommand())
             {
                 foreach (var f in filters)
@@ -46,6 +53,7 @@ namespace DataPipe.Sql.Filters
 
                     await f.Execute(msg);
                 }
+                msg.OnLog?.Invoke("SQL CONNECTION CLOSED");
             }
         }
     }
