@@ -24,6 +24,7 @@ namespace DataPipe.Core.Filters
             {
                 foreach (var f in _filters)
                 {
+                    if (msg.Execution.IsStopped) break;
                     await f.Execute(msg);
                 }
             }

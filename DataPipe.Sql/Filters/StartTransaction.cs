@@ -2,7 +2,6 @@ using System.Threading.Tasks;
 using System.Transactions;
 using DataPipe.Core;
 using DataPipe.Core.Contracts;
-using DataPipe.Sql.Contracts;
 
 namespace DataPipe.Sql.Filters
 {

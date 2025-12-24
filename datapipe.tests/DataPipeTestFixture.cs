@@ -5,7 +5,6 @@ using DataPipe.Sql.Filters;
 using DataPipe.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
-using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 

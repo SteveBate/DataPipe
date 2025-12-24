@@ -1,4 +1,4 @@
-namespace DataPipe.Sql.Contracts
+namespace DataPipe.Core.Contracts
 {
     public interface IAmCommittable
     {
