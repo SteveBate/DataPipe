@@ -2,7 +2,7 @@
 
 namespace DataPipe.Sql.Contracts
 {
-    public interface ISqlCommand
+    public interface IUseSqlCommand
     {
         SqlCommand Command { get; set; }
     }

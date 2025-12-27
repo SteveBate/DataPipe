@@ -62,6 +62,11 @@ namespace DataPipe.Sql.Filters
 
                     if (msg.Commit)
                     {
+                        if (msg.CancellationToken.IsCancellationRequested)
+                        {
+                            throw new OperationCanceledException("Operation was cancelled before committing transaction.");
+                        }
+
                         scope.Complete();
                         msg.OnLog?.Invoke("TRANSACTION COMMITTED");
                     }
