@@ -55,6 +55,8 @@ namespace DataPipe.Sql.Filters
                 }
                 msg.OnLog?.Invoke("SQL CONNECTION CLOSED");
             }
+
+            msg.Command = null!;
         }
     }
 }
