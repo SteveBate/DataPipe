@@ -50,15 +50,12 @@ namespace DataPipe.Core.Filters
                 {
                     foreach (Filter<T> filter in _filters)
                     {
-                        if (msg.Execution.IsStopped)
-                        {
-                            break;
-                        }
+                        if (msg.Execution.IsStopped) { break; }
 
                         await filter.Execute(msg);
                     }
                 }
-                while (!msg.Execution.IsStopped);
+                while (!_callback(msg));
 
                 msg.Execution.Reset();
             }

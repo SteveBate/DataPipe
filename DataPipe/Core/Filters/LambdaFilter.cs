@@ -13,16 +13,6 @@ namespace DataPipe.Core.Filters
     /// This is useful for simple, one-off filtering operations where creating a dedicated filter class
     /// would be unnecessary overhead.
     /// </para>
-    /// <para>
-    /// The filter accepts a <see cref="Func{T, Task}"/> delegate that will be invoked during
-    /// execution with the input message. The delegate is responsible for all filter processing,
-    /// including validation, transformation, or side effects.
-    /// </para>
-    /// <para>
-    /// Thread Safety: The thread safety of instances depends on the implementation of the provided delegate.
-    /// </para>
-    /// </remarks>
-    /// <typeparam name="T">The message type to filter. Must inherit from <see cref="BaseMessage"/>.</typeparam>
     public class LambdaFilter<T> : Filter<T> where T : BaseMessage
     {
         /// <summary>

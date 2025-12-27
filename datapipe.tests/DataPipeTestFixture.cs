@@ -332,8 +332,7 @@ namespace DataPipe.Tests
             sut.Run(
                 new ForEach<TestMessage, string>(
                     msg => msg.Words,
-                    (msg, s) => msg.Instance = s,
-                        new ConcatenatingFilter()
+                    (msg, s) => msg.Instance = s, new ConcatenatingFilter()
                 )
             );
             var msg = new TestMessage { Words = ["this", "was", "constructed", "via", "multiple", "passes", "of", "the", "ForEach", "filter"] };
@@ -346,19 +345,20 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_run_message_through_pipeline_multiple_times_until_cancellation_token_is_set()
+        public async Task Should_repeat_filter_execution_until_pipeline_is_explicitly_stopped_by_user()
         {
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_pipeline_multiple_times_until_cancellation_token_is_set)));
-            sut.Run(new Repeat<TestMessage>(
-                new IncrementingNumberFilter(),
-                new IfTrue<TestMessage>(x => x.__Debug == "123",
-                    new LambdaFilter<TestMessage>(x => 
-                    {
-                        x.Execution.Stop();
-                        return Task.CompletedTask;
-                    }))));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_repeat_filter_execution_until_pipeline_is_explicitly_stopped_by_user)));
+            sut.Run(
+                new Repeat<TestMessage>(
+                    new IncrementingNumberFilter(),
+                    new IfTrue<TestMessage>(x => x.__Debug == "123",
+                        new LambdaFilter<TestMessage>(x => 
+                        {
+                            x.Execution.Stop();
+                            return Task.CompletedTask;
+                        }))));
             var msg = new TestMessage();
 
             // when
@@ -369,23 +369,15 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_run_message_through_pipeline_multiple_times_until_condition_is_met()
+        public async Task Should_repeat_filter_execution_until_callback_condition_is_met()
         {
-            var x = 5;
-            var f = () => { --x; return x == 0; };
-
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_pipeline_multiple_times_until_condition_is_met)));
-            sut.Run(new RepeatUntil<TestMessage>(x => f(),
-                new IncrementingNumberFilter(),
-                new IfTrue<TestMessage>(x => x.__Debug == "12345",
-                    new LambdaFilter<TestMessage>(x => 
-                    {
-                        x.Execution.Stop();
-                        return Task.CompletedTask; 
-                    }))));
-            var msg = new TestMessage();
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_repeat_filter_execution_until_callback_condition_is_met)));
+            sut.Run(
+                new RepeatUntil<TestMessage>(x => x.Number == 5,
+                    new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
 
             // when
             await sut.Invoke(msg);
@@ -395,18 +387,19 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_select_filter_to_execute_based_on_message_policy_if()
+        public async Task Should_select_filter_to_execute_based_on_message_policy_using_if()
         {
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_select_filter_to_execute_based_on_message_policy_if)));
-            sut.Run(new Policy<TestMessage>(msg =>
-            {
-                if (msg.Number == 0)
-                    return new IncrementingNumberFilter();
-                else
-                    return new DecrementingNumberFilter();
-            }));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_select_filter_to_execute_based_on_message_policy_using_if)));
+            sut.Run(
+                new Policy<TestMessage>(msg =>
+                {
+                    if (msg.Number == 0)
+                        return new IncrementingNumberFilter();
+                    else
+                        return new DecrementingNumberFilter();
+                }));
             var msg1 = new TestMessage { Number = 0 };
             var msg2 = new TestMessage { Number = 1 };
 
@@ -420,18 +413,19 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_select_filter_to_execute_based_on_message_policy_switch()
+        public async Task Should_select_filter_to_execute_based_on_message_policy_using_switch()
         {
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>()); // to handle out of range exception
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_select_filter_to_execute_based_on_message_policy_switch)));
-            sut.Run(new Policy<TestMessage>(msg => msg.Number switch
-            {
-                0 => new IncrementingNumberFilter(),
-                1 => new DecrementingNumberFilter(),
-                _ => throw new ArgumentOutOfRangeException()
-            }));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_select_filter_to_execute_based_on_message_policy_using_switch)));
+            sut.Run(
+                new Policy<TestMessage>(msg => msg.Number switch
+                {
+                    0 => new IncrementingNumberFilter(),
+                    1 => new DecrementingNumberFilter(),
+                    _ => throw new ArgumentOutOfRangeException()
+                }));
             var msg1 = new TestMessage { Number = 0 };
             var msg2 = new TestMessage { Number = 1 };
             var msg3 = new TestMessage { Number = 2 };
@@ -448,16 +442,16 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_execute_all_filters_in_composed_filter()
+        public async Task Should_execute_all_filters_using_explicit_grouping_parent_filter()
         {
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_in_composed_filter)));
-            sut.Run(new ExecuteAll<TestMessage>(
-                new IncrementingNumberFilter(),
-                new IncrementingNumberFilter(),
-                new IncrementingNumberFilter()
-            ));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_using_explicit_grouping_parent_filter)));
+            sut.Run(
+                new ExecuteAll<TestMessage>(
+                    new IncrementingNumberFilter(),
+                    new IncrementingNumberFilter(),
+                    new IncrementingNumberFilter()));
             var msg = new TestMessage { Number = 0 };
 
             // when
@@ -468,18 +462,35 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_execute_all_filters_in_composed_filter_on_condition()
+        public async Task Should_execute_all_filters_using_overload_for_multiple_filters_without_need_for_grouping_parent_filter()
         {
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_in_composed_filter)));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_using_overload_for_multiple_filters_without_need_for_grouping_parent_filter)));
+            sut.Run(
+                new IncrementingNumberFilter(),
+                new IncrementingNumberFilter(),
+                new IncrementingNumberFilter());
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(msg.Number, 3);
+        }
+
+        [TestMethod]
+        public async Task Should_execute_all_filters_in_composite_filter_on_condition()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_in_composite_filter_on_condition)));
             sut.Run(
                 new IfTrue<TestMessage>(m => true,
-                    new ExecuteAll<TestMessage>(
-                        new IncrementingNumberFilter(),
-                        new IncrementingNumberFilter(),
-                        new IncrementingNumberFilter()
-                    )));
+                    new IncrementingNumberFilter(),
+                    new IncrementingNumberFilter(),
+                    new IncrementingNumberFilter()));
             var msg = new TestMessage { Number = 0 };
 
             // when
@@ -490,18 +501,16 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_bypass_execute_all_filters_in_composed_filter_on_condition()
+        public async Task Should_bypass_execution_of_all_filters_in_composite_filter_on_condition()
         {
             // given
             var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_bypass_execute_all_filters_in_composed_filter_on_condition)));
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_bypass_execution_of_all_filters_in_composite_filter_on_condition)));
             sut.Run(
                 new IfTrue<TestMessage>(m => false,
-                    new ExecuteAll<TestMessage>(
-                        new IncrementingNumberFilter(),
-                        new IncrementingNumberFilter(),
-                        new IncrementingNumberFilter()
-                    )));
+                    new IncrementingNumberFilter(),
+                    new IncrementingNumberFilter(),
+                    new IncrementingNumberFilter()));
             var msg = new TestMessage { Number = 0 };
 
             // when

@@ -24,7 +24,7 @@ namespace DataPipe.Core.Filters
     /// </para>
     /// <para>
     /// This filter is useful for  any workflow that requires repeated processing of a message 
-    /// until a specific condition is met.
+    /// until the caller determines that no further processing is needed and signals to stop execution.
     /// </para>
     /// </remarks>
     /// <typeparam name="T">The message type, must derive from <see cref="BaseMessage"/>.</typeparam>

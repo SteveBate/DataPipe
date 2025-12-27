@@ -59,6 +59,9 @@ namespace DataPipe.Core
         /// Register the individual steps that make up the DataPipe
         public void Run(Filter<T> filter) => _filters.Add(filter);
 
+        // Register multiple filters at once
+        public void Run(params Filter<T>[] filters) => _filters.AddRange(filters);
+
         // Syntacic sugar to register a filter from a lambda
         public void Run(Func<T, Task> action)
         {
