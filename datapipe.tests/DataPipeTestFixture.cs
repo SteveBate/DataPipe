@@ -442,17 +442,24 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_execute_all_filters_using_explicit_grouping_parent_filter()
+        public async Task Should_use_sequence_as_grouping_parent_for_multiple_filters_that_need_To_run_after_policy_decision()
         {
             // given
-            var sut = new DataPipe<TestMessage>();
-            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_using_explicit_grouping_parent_filter)));
-            sut.Run(
-                new ExecuteAll<TestMessage>(
-                    new IncrementingNumberFilter(),
-                    new IncrementingNumberFilter(),
-                    new IncrementingNumberFilter()));
             var msg = new TestMessage { Number = 0 };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_use_sequence_as_grouping_parent_for_multiple_filters_that_need_To_run_after_policy_decision)));
+            sut.Run(
+                new Policy<TestMessage>(m =>
+                {
+                    if (m.Number >= 0) return 
+                        new Sequence<TestMessage>(
+                            new IncrementingNumberFilter(),
+                            new IncrementingNumberFilter(),
+                            new IncrementingNumberFilter());
+                    
+                    return new NoOpFilter();
+                }));
+            
 
             // when
             await sut.Invoke(msg);
