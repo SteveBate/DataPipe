@@ -20,7 +20,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_arrange_aspects_in_correct_execution_order)));
-            sut.Run(async m => {
+            sut.Add(async m => {
                 await Task.Delay(0);
             });
 
@@ -38,8 +38,8 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_lambda_filters_indistinguishably_from_concrete_filters)));
-            sut.Run(new LambdaFilter<TestMessage>(async m => { m.Number+= 1; }));
-            sut.Run(async m => { m.Number += 1;});
+            sut.Add(new LambdaFilter<TestMessage>(async m => { m.Number+= 1; }));
+            sut.Add(async m => { m.Number += 1;});
             var msg = new TestMessage { Number = 0 };
             
             // when
@@ -101,7 +101,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_notify_error_when_using_exception_middleware)));
-            sut.Run(new ErroringFilter());
+            sut.Add(new ErroringFilter());
             var msg = new TestMessage { OnError = (m, e) => m.StatusMessage = "error" };
 
             // when
@@ -118,7 +118,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_propagate_error_when_not_using_exception_middleware)));
-            sut.Run(new ErroringFilter());
+            sut.Add(new ErroringFilter());
             var msg = new TestMessage();
 
             // when
@@ -126,7 +126,7 @@ namespace DataPipe.Tests
         }
 
         /// Filters can be composed inline to provide more complex functionality
-        /// that affects only the filters within the current Run statement
+        /// that affects only the filters within the current Add statement
         [TestMethod]
         public async Task Should_retry_when_using_locally_composed_retry_and_transaction_filters()
         {
@@ -134,7 +134,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_locally_composed_retry_and_transaction_filters)));
-            sut.Run(new OnTimeoutRetry<TestMessage>(3,
+            sut.Add(new OnTimeoutRetry<TestMessage>(3,
                         new StartTransaction<TestMessage>(
                             new MockTimeoutErroringFilter())));
             var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
@@ -155,7 +155,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_with_custom_retry_and_default_delay_when_using_locally_composed_retry_and_transaction_filters)));
-            sut.Run(
+            sut.Add(
                 new OnTimeoutRetry<TestMessage>(MaxRetries,
                 retryWhen: (ex, msg) => ex is HttpRequestException,
                     new StartTransaction<TestMessage>(
@@ -178,7 +178,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_with_custom_retry_and_custom_delay_when_using_locally_composed_retry_and_transaction_filters)));
-            sut.Run(
+            sut.Add(
                 new OnTimeoutRetry<TestMessage>(MaxRetries, 
                 retryWhen: (ex, msg) => ex is HttpRequestException,
                 customDelay: (attempt ,msg) => TimeSpan.FromMilliseconds(100 * attempt),
@@ -203,7 +203,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_when_using_externally_composed_retry_and_transaction_filters)));
-            sut.Run(new ComposedRetryWithTransactionFilter<TestMessage>(maxRetries, new MockTimeoutErroringFilter()));
+            sut.Add(new ComposedRetryWithTransactionFilter<TestMessage>(maxRetries, new MockTimeoutErroringFilter()));
             var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
 
             // when
@@ -221,7 +221,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_retry_and_recover_after_one_attempt_when_using_retry_filter)));
-            sut.Run(new OnTimeoutRetry<TestMessage>(maxRetries,
+            sut.Add(new OnTimeoutRetry<TestMessage>(maxRetries,
                         new StartTransaction<TestMessage>(
                             new MockRecoveringTimeoutErroringFilter())));
             var msg = new TestMessage { OnRetrying = (s) => Console.WriteLine("Retrying") };
@@ -240,8 +240,8 @@ namespace DataPipe.Tests
             var success = false;
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_not_succeed_when_pipeline_cancelled_manually)));
-            sut.Run(new CancellingFilter());
-            sut.Run(new NoOpFilter());
+            sut.Add(new CancellingFilter());
+            sut.Add(new NoOpFilter());
             var msg = new TestMessage { OnSuccess = (m) => success = true };
 
             // when
@@ -257,8 +257,8 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_report_reason_when_pipeline_cancelled_manually)));
-            sut.Run(new CancellingFilter());
-            sut.Run(new NoOpFilter());
+            sut.Add(new CancellingFilter());
+            sut.Add(new NoOpFilter());
             var msg = new TestMessage();
 
             // when
@@ -275,7 +275,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_finally_filters_when_pipeline_succeeds)));
-            sut.Run(new NoOpFilter());
+            sut.Add(new NoOpFilter());
             sut.Finally(new AlwaysRunFilter());
             var msg = new TestMessage();
 
@@ -292,7 +292,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_finally_filters_when_pipeline_cancelled)));
-            sut.Run(new CancellingFilter());
+            sut.Add(new CancellingFilter());
             sut.Finally(new AlwaysRunFilter());
             var msg = new TestMessage();
 
@@ -310,7 +310,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_finally_filters_when_pipeline_errors)));
-            sut.Run(new ErroringFilter());
+            sut.Add(new ErroringFilter());
             sut.Finally(new AlwaysRunFilter());
             var msg = new TestMessage();
 
@@ -329,7 +329,7 @@ namespace DataPipe.Tests
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_run_message_through_filter_block_multiple_times_with_ForEach_Filter)));
 
             // Each word flows through the same filter instance via the message
-            sut.Run(
+            sut.Add(
                 new ForEach<TestMessage, string>(
                     msg => msg.Words,
                     (msg, s) => msg.Instance = s, new ConcatenatingFilter()
@@ -350,7 +350,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_repeat_filter_execution_until_pipeline_is_explicitly_stopped_by_user)));
-            sut.Run(
+            sut.Add(
                 new Repeat<TestMessage>(
                     new IncrementingNumberFilter(),
                     new IfTrue<TestMessage>(x => x.__Debug == "123",
@@ -374,7 +374,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_repeat_filter_execution_until_callback_condition_is_met)));
-            sut.Run(
+            sut.Add(
                 new RepeatUntil<TestMessage>(x => x.Number == 5,
                     new IncrementingNumberFilter()));
             var msg = new TestMessage { Number = 0 };
@@ -392,7 +392,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_select_filter_to_execute_based_on_message_policy_using_if)));
-            sut.Run(
+            sut.Add(
                 new Policy<TestMessage>(msg =>
                 {
                     if (msg.Number == 0)
@@ -419,7 +419,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>()); // to handle out of range exception
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_select_filter_to_execute_based_on_message_policy_using_switch)));
-            sut.Run(
+            sut.Add(
                 new Policy<TestMessage>(msg => msg.Number switch
                 {
                     0 => new IncrementingNumberFilter(),
@@ -448,7 +448,7 @@ namespace DataPipe.Tests
             var msg = new TestMessage { Number = 0 };
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_use_sequence_as_grouping_parent_for_multiple_filters_that_need_To_run_after_policy_decision)));
-            sut.Run(
+            sut.Add(
                 new Policy<TestMessage>(m =>
                 {
                     if (m.Number >= 0) return 
@@ -474,7 +474,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_using_overload_for_multiple_filters_without_need_for_grouping_parent_filter)));
-            sut.Run(
+            sut.Add(
                 new IncrementingNumberFilter(),
                 new IncrementingNumberFilter(),
                 new IncrementingNumberFilter());
@@ -493,7 +493,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_execute_all_filters_in_composite_filter_on_condition)));
-            sut.Run(
+            sut.Add(
                 new IfTrue<TestMessage>(m => true,
                     new IncrementingNumberFilter(),
                     new IncrementingNumberFilter(),
@@ -513,7 +513,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new BasicLoggingAspect<TestMessage>(nameof(Should_bypass_execution_of_all_filters_in_composite_filter_on_condition)));
-            sut.Run(
+            sut.Add(
                 new IfTrue<TestMessage>(m => false,
                     new IncrementingNumberFilter(),
                     new IncrementingNumberFilter(),

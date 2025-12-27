@@ -29,7 +29,7 @@ namespace DataPipe.EntityFramework.Filters
     /// <typeparam name="T">The message type, which must implement <see cref="IUseDbContext"/>.</typeparam>
     /// <example>
     /// <code>
-    /// pipe.Run(new OpenDbContext&lt;OrderMessage&gt;(
+    /// pipe.Add(new OpenDbContext&lt;OrderMessage&gt;(
     ///     msg => new AppDbContext(options),
     ///     new LoadOrder(),
     ///     new ValidateOrder(),

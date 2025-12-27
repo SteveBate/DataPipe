@@ -25,7 +25,7 @@ dotnet add package SCB.DataPipe.Sql
 var pipe = new DataPipe<TestMessage>();
 
 pipe.Use(new ExceptionAspect<TestMessage>());
-pipe.Run(async m => m.Number++);
+pipe.Add(async m => m.Number++);
 
 await pipe.Invoke(new TestMessage());
 ```

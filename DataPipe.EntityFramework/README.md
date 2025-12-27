@@ -19,7 +19,7 @@ dotnet add package SCB.DataPipe.EntityFramework
 Opens a scoped `DbContext` for the duration of child filter execution.
 
 ```csharp
-pipe.Run(new OpenDbContext<OrderMessage>(
+pipe.Add(new OpenDbContext<OrderMessage>(
     msg => new AppDbContext(options),
     new LoadOrder(),
     new SaveOrder()
@@ -31,7 +31,7 @@ pipe.Run(new OpenDbContext<OrderMessage>(
 Wraps child filters in a database transaction. Commits when `msg.Commit = true`.
 
 ```csharp
-pipe.Run(new OpenDbContext<OrderMessage>(
+pipe.Add(new OpenDbContext<OrderMessage>(
     msg => new AppDbContext(options),
     new StartEfTransaction<OrderMessage>(
         new ProcessOrder(),

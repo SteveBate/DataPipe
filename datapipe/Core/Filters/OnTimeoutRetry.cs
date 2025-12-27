@@ -15,23 +15,23 @@ namespace DataPipe.Core.Filters
     /// Example Usages:
     /// 
     /// Default retry:
-    ///    pipe.Run(new OnTimeoutRetry<TestMessage>(3, new SomeFilter()));
+    ///    pipe.Add(new OnTimeoutRetry<TestMessage>(3, new SomeFilter()));
     ///    - Retries up to 3 times
     ///    - Linear 2s, 4s, 6s delay
     ///    - Retries on TimeoutException or transient DB/network errors
     /// 
     /// Retry only on HttpRequestException:
-    ///    pipe.Run(new OnTimeoutRetry<TestMessage>(
+    ///    pipe.Add(new OnTimeoutRetry<TestMessage>(
     ///        5, new SomeFilter(),
     ///        retryWhen: (ex, msg) => ex is HttpRequestException));
     /// 
     /// Exponential backoff delay strategy:
-    ///    pipe.Run(new OnTimeoutRetry<TestMessage>(
+    ///    pipe.Add(new OnTimeoutRetry<TestMessage>(
     ///        5, new SomeFilter(),
     ///        customDelay: (attempt, msg) => TimeSpan.FromSeconds(Math.Pow(2, attempt))));
     /// 
     /// Fully custom example:
-    ///    pipe.Run(new OnTimeoutRetry<TestMessage>(
+    ///    pipe.Add(new OnTimeoutRetry<TestMessage>(
     ///        3, new SomeFilter(),
     ///        retryWhen: (ex, msg) => ex is TimeoutException || ex.Message.Contains("busy"),
     ///        customDelay: (attempt, msg) => TimeSpan.FromSeconds(attempt * 1.5)));

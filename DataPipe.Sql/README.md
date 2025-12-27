@@ -19,7 +19,7 @@ var pipe = new DataPipe<TestMessage>();
 
 pipe.Use(new ExceptionAspect<TestMessage>());
 
-pipe.Run(
+pipe.Add(
     new StartTransaction<TestMessage>(
         new OpenSqlConnection<TestMessage>(
             new SaveOrder()

@@ -13,14 +13,14 @@ namespace DataPipe.Core.Filters
     /// 
     /// Simple string concatenation:
     /// // msg.Words = new[] { "this", "is", "a", "test" };
-    /// pipe.Run(new ForEach<TestMessage, string>(
+    /// pipe.Add(new ForEach<TestMessage, string>(
     ///     msg => msg.Words,
     ///     (msg, word) => msg.CurrentWord = word,
     ///     new ConcatenatingFilter()
     /// ));
     /// 
     /// Execute multiple filters for each item:
-    /// pipe.Run(new ForEach<TestMessage, string>(
+    /// pipe.Add(new ForEach<TestMessage, string>(
     ///     msg => msg.Words,
     ///     (msg, word) => msg.CurrentWord = word,
     ///     new ConcatenatingFilter(),
@@ -28,7 +28,7 @@ namespace DataPipe.Core.Filters
     /// ));
     /// 
     /// Stop the pipeline mid-loop:
-    /// pipe.Run(new ForEach<TestMessage, string>(
+    /// pipe.Add(new ForEach<TestMessage, string>(
     ///     msg => msg.Words,
     ///     (msg, word) =>
     ///     {

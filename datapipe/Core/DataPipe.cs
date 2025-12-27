@@ -57,21 +57,21 @@ namespace DataPipe.Core
         public void Post(Filter<T> filter) => _postFilter = filter;
 
         /// Register the individual steps that make up the DataPipe
-        public void Run(Filter<T> filter) => _filters.Add(filter);
+        public void Add(Filter<T> filter) => _filters.Add(filter);
 
         // Register multiple filters at once
-        public void Run(params Filter<T>[] filters) => _filters.AddRange(filters);
+        public void Add(params Filter<T>[] filters) => _filters.AddRange(filters);
 
         // Syntacic sugar to register a filter from a lambda
-        public void Run(Func<T, Task> action)
+        public void Add(Func<T, Task> action)
         {
             _filters.Add(new LambdaFilter<T>(action));
         }
 
 
         /// Conditionally add filters - based on state known at configuration time e.g. environment variables
-        public void RunIf(bool condition, Filter<T> filter) => RunIf(condition, filter, new NullFilter<T>());
-        public void RunIf(bool condition, Filter<T> filter, Filter<T> elseFilter) => _filters.Add(condition ? filter : elseFilter);
+        public void AddIf(bool condition, Filter<T> filter) => AddIf(condition, filter, new NullFilter<T>());
+        public void AddIf(bool condition, Filter<T> ifTrue, Filter<T> ifFalse) => _filters.Add(condition ? ifTrue : ifFalse);
         
         /// Finally registers filters that must run even when an error occurs
         public void Finally(Filter<T> filter) => _finallyFilters.Add(filter);

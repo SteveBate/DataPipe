@@ -40,7 +40,7 @@ namespace DataPipe.EntityFramework.Filters
     /// <typeparam name="T">The message type, which must implement both <see cref="IAmCommittable"/> and <see cref="IUseDbContext"/>.</typeparam>
     /// <example>
     /// <code>
-    /// pipe.Run(new OpenDbContext&lt;OrderMessage&gt;(
+    /// pipe.Add(new OpenDbContext&lt;OrderMessage&gt;(
     ///     msg => new AppDbContext(options),
     ///     new StartEfTransaction&lt;OrderMessage&gt;(
     ///         new ProcessOrder(),
