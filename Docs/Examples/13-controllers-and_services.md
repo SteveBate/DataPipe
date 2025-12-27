@@ -23,13 +23,12 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
 {
     public async Task Invoke(ListOrdersMessage msg)
     {
-        var pipe = new DataPipe<ListOrdersMessage>() { DebugOn = true};
+        var pipe = new DataPipe<ListOrdersMessage>() { DebugOn = true };
         pipe.Use(new LoggingAspect<ListOrdersMessage>(logger));
         pipe.Use(new OnErrorAspect<ListOrdersMessage>());
-        
         pipe.Add(
             new ValidateListOrdersMessage(),
-            new OpenSqlConnection<ListOrdersMessage>(AppSettings.Instance.Crm,
+            new OpenSqlConnection<ListOrdersMessage>(AppSettings.Instance.ConnectionStr,
                 new LoadListOfClientOrders()));
 
         await pipe.Invoke(msg);
@@ -40,10 +39,9 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
         var pipe = new DataPipe<ViewOrderDetailsMessage>();
         pipe.Use(new LoggingAspect<ViewOrderDetailsMessage>(logger));
         pipe.Use(new OnErrorAspect<ViewOrderDetailsMessage>());
-        
         pipe.Add(                
             new ValidateViewOrderDetailsMessage(),
-            new OpenSqlConnection<ViewOrderDetailsMessage>(AppSettings.Instance.Crm,
+            new OpenSqlConnection<ViewOrderDetailsMessage>(AppSettings.Instance.ConnectionStr,
                 new LoadOrderDetails(),
                 new LoadHeldOrderLineReasons(),
                 new SetResultStatus()));
@@ -56,11 +54,10 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
         var pipe = new DataPipe<CreateOrderMessage>();
         pipe.Use(new LoggingAspect<CreateOrderMessage>(logger));
         pipe.Use(new OnErrorAspect<CreateOrderMessage>());
-
         pipe.Add(               
             new ValildateCreateOrderMessage(),
             new StartTransaction<CreateOrderMessage>(
-                new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.Crm,
+                new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionStr,
                     new GetNextOrderNumber(),
                     new AddOrderHeader(),
                     new Policy<CreateOrderMessage>(m => m.AccountImportKind switch
