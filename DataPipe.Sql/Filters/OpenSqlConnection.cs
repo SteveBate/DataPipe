@@ -27,7 +27,7 @@ namespace DataPipe.Sql.Filters
     /// <typeparam name="T">The message type that must inherit from <see cref="BaseMessage"/> and implement <see cref="ISqlCommand"/></typeparam>
     /// <param name="connectionString">The SQL connection string used to establish a database connection</param>
     /// <param name="filters">A variable-length array of filters to execute sequentially in the pipeline</param>
-    public sealed class OpenSqlConnection<T>(string connectionString, params Filter<T>[] filters) : Filter<T> where T : BaseMessage, ISqlCommand
+    public sealed class OpenSqlConnection<T>(string connectionString, params Filter<T>[] filters) : Filter<T> where T : BaseMessage, IUseSqlCommand
     {
         /// <summary>
         /// Asynchronously executes the filter chain with an open SQL connection and command.
