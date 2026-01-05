@@ -2,8 +2,9 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using System.Threading;
+using DataPipe.Core.Telemetry;
 
-[assembly: InternalsVisibleTo("datapipe.tests")]
+[assembly: InternalsVisibleTo("DataPipe.Tests")]
 
 namespace DataPipe.Core
 {
@@ -14,7 +15,11 @@ namespace DataPipe.Core
     /// </summary>
     public abstract class BaseMessage
     {
-        // --- Status information ---
+        public Guid CorrelationId { get; set; } = Guid.NewGuid();
+        public ServiceIdentity? Service { get; init; }
+        public string PipelineName { get; set; } = string.Empty;
+
+        // Status information
         [JsonIgnore] public int StatusCode { get; set; } = 200;
         [JsonIgnore] public string StatusMessage { get; set; } = string.Empty;
         [JsonIgnore] public bool IsSuccess => StatusCode < 400;
@@ -24,23 +29,30 @@ namespace DataPipe.Core
             StatusMessage = message;
         }
 
-        // --- Real async cancellation ---
+        // Real async cancellation
         [JsonIgnore] public CancellationToken CancellationToken { get; internal set; }
 
-        // --- Flow control (replaces old CancellationToken.Stopped) ---
-        [JsonIgnore] public PipelineExecution Execution { get; } = new PipelineExecution();
+        // Flow control (replaces old CancellationToken.Stopped)
+        [JsonIgnore] public ExecutionContext Execution { get; } = new();
 
-        // --- Lifecycle hooks ---
+        // Lifecycle hooks
         [JsonIgnore] public Action<BaseMessage, Exception> OnError = delegate { };
         [JsonIgnore] public Action<BaseMessage> OnStart = delegate { };
         [JsonIgnore] public Action<BaseMessage> OnComplete = delegate { };
         [JsonIgnore] public Action<BaseMessage> OnSuccess = delegate { };
         [JsonIgnore] public Action<string> OnLog = delegate { };
+        [JsonIgnore] public Action<TelemetryEvent> OnTelemetry = delegate { };
 
-        // --- Internals (for debugging) ---
+        // Telemetry configuration
+        [JsonIgnore] public TelemetryMode TelemetryMode { get; internal set; } = TelemetryMode.Off;
+
+        // Internals (for debugging)
         internal string? __Debug { get; set; }
 
-        // --- Constructor for async support ---
+        // general purpose tag, useful for stuffing with extra info
+        public string Tag { get; set; } = string.Empty;
+
+        // Constructor for async support
         protected BaseMessage(CancellationToken? token = null)
         {
             CancellationToken = token ?? CancellationToken.None;
@@ -48,5 +60,22 @@ namespace DataPipe.Core
 
         // Convenience property
         public bool ShouldStop => Execution.IsStopped || CancellationToken.IsCancellationRequested;
+
+        // Helper method to check if telemetry should be emitted based on mode and event
+        public bool ShouldEmitTelemetry(TelemetryEvent telemetryEvent)
+        {
+            return TelemetryMode switch
+            {
+                TelemetryMode.Off => false,
+                TelemetryMode.PipelineOnly => telemetryEvent.Scope == TelemetryScope.Pipeline,
+                TelemetryMode.PipelineAndErrors => telemetryEvent.Scope == TelemetryScope.Pipeline || 
+                                                   telemetryEvent.Outcome == TelemetryOutcome.Exception,
+                TelemetryMode.PipelineErrorsAndStops => telemetryEvent.Scope == TelemetryScope.Pipeline || 
+                                                        telemetryEvent.Outcome == TelemetryOutcome.Exception ||
+                                                        telemetryEvent.Outcome == TelemetryOutcome.Stopped,
+                TelemetryMode.PipelineAndFilters => true,
+                _ => false
+            };
+        }
     }
 }

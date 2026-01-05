@@ -13,7 +13,7 @@ namespace DataPipe.Tests.Support
         public Action<int> OnRetrying { get; set; }
 
         // IAmCommittable implementation
-        public bool Commit { get; set; }
+        public bool Commit { get; set; } = true;
 
         public string ConnectionString { get; set; }
         public string Instance { get; set; }

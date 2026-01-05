@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using DataPipe.Core.Contracts.Internal;
 
 namespace DataPipe.Core.Filters
 {
@@ -13,8 +14,9 @@ namespace DataPipe.Core.Filters
     /// This is useful for simple, one-off filtering operations where creating a dedicated filter class
     /// would be unnecessary overhead.
     /// </para>
-    public class LambdaFilter<T> : Filter<T> where T : BaseMessage
+    public class LambdaFilter<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
+        public bool EmitTelemetryEvent => true;
         /// <summary>
         /// The asynchronous delegate function to execute during filtering.
         /// </summary>

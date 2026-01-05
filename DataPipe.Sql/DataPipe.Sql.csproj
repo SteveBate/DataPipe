@@ -7,7 +7,7 @@
     <IsPackable>true</IsPackable>
 
     <PackageId>SCB.DataPipe.Sql</PackageId>
-    <Version>4.2.1</Version>
+    <Version>4.3.6</Version>
 
     <Authors>Stephen C. Bate</Authors>
     <Description>DataPipe.Sql: Ready-made transaction and SQL filters for DataPipe.</Description>

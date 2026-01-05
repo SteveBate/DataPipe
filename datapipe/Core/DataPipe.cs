@@ -1,10 +1,13 @@
+using DataPipe.Core.Contracts.Internal;
+using DataPipe.Core.Filters;
+using DataPipe.Core.Telemetry;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using DataPipe.Core.Filters;
 
 [assembly: InternalsVisibleTo("datapipe.tests")]
 namespace DataPipe.Core
@@ -48,6 +51,15 @@ namespace DataPipe.Core
             _aspects.Aggregate((a, b) => a.Next = b);
         }
 
+        // A UseIf for conditional aspect registration
+        public void UseIf(bool condition, Aspect<T> ifTrue, Aspect<T>? ifFalse = null)
+        {
+            if (condition) Use(ifTrue);
+            if (!condition && ifFalse != null) Use(ifFalse);
+        }
+
+        public string Name { get; set; } = "DataPipe";
+        public TelemetryMode TelemetryMode { get; set; } = TelemetryMode.Off;
         public bool DebugOn { get; set; }
 
         /// Register a filter to run before everything else - useful for set up  such as copying files in to a working directory or reading config file values to set on the message before the main pipe runs
@@ -70,8 +82,11 @@ namespace DataPipe.Core
 
 
         /// Conditionally add filters - based on state known at configuration time e.g. environment variables
-        public void AddIf(bool condition, Filter<T> filter) => AddIf(condition, filter, new NullFilter<T>());
-        public void AddIf(bool condition, Filter<T> ifTrue, Filter<T> ifFalse) => _filters.Add(condition ? ifTrue : ifFalse);
+        public void AddIf(bool condition, Filter<T> filter) => AddIf(condition, filter, null);
+        public void AddIf(bool condition, Filter<T> ifTrue, Filter<T>? ifFalse) {
+            if (condition) _filters.Add(ifTrue);
+            if (!condition && ifFalse != null) _filters.Add(ifFalse);
+        }
         
         /// Finally registers filters that must run even when an error occurs
         public void Finally(Filter<T> filter) => _finallyFilters.Add(filter);
@@ -81,8 +96,27 @@ namespace DataPipe.Core
         /// </summary>
         public async Task Invoke(T msg, CancellationToken cancellationToken = default)
         {
+            // Set the pipeline name on the message
+            msg.PipelineName = Name;
+
             // Attach the external cancellation token to the message
             msg.CancellationToken = cancellationToken;
+            
+            // Set the telemetry mode on the message
+            msg.TelemetryMode = TelemetryMode;
+
+            // assert the ServiceIdentity is set when telemetry is enabled and at least the Name and Environment are populated
+            switch (msg.TelemetryMode)
+            {
+                case var x when x != TelemetryMode.Off && msg.Service == null:
+                    throw new InvalidOperationException("ServiceIdentity must be set on the message when telemetry is enabled.");
+                    
+                case var x when x != TelemetryMode.Off && string.IsNullOrWhiteSpace(msg.Service?.Name):
+                    throw new InvalidOperationException("ServiceIdentity.Name must be set when telemetry is enabled.");
+                
+                case var x when x != TelemetryMode.Off && string.IsNullOrWhiteSpace(msg.Service?.Environment):
+                    throw new InvalidOperationException("ServiceIdentity.Environment must be set when telemetry is enabled.");
+            }
 
             await _preFilter.Execute(msg);
             await _aspects.First().Execute(msg);
@@ -97,7 +131,24 @@ namespace DataPipe.Core
         // Execute iterates the pipeline pushing the message through each registered filter
         private async Task Execute(T msg)
         {
+            var pipeOutcome = TelemetryOutcome.None;
+            var pipeStopReason = string.Empty;
+            var psw = Stopwatch.StartNew();
+            var @begin = new TelemetryEvent
+            {
+                PipelineName = Name,
+                Component = Name,
+                Service = msg.Service,
+                Scope = TelemetryScope.Pipeline,
+                Role = FilterRole.None,
+                Phase = TelemetryPhase.Start,
+                MessageId = msg.CorrelationId,
+                Timestamp = DateTimeOffset.UtcNow };
+            if (msg.ShouldEmitTelemetry(@begin)) msg.OnTelemetry?.Invoke(@begin);
+            
+            pipeOutcome = TelemetryOutcome.Success;
             msg.OnStart?.Invoke(msg);
+            msg.OnLog?.Invoke($"STARTING: {Name}");
             try
             {
                 if (DebugOn) msg.OnLog?.Invoke($"MESSAGE STATE: {msg.Dump()}");
@@ -106,20 +157,86 @@ namespace DataPipe.Core
                 {
                     foreach (var f in _filters)
                     {
+                        var reason = string.Empty;
+                        var fsw = Stopwatch.StartNew();
+                        
+                        // Check if this structural filter manages its own telemetry
+                        var selfEmitting = f is IAmStructural structural && !structural.EmitTelemetryEvent;
+                        var emitStart = f is not IAmStructural || (f is IAmStructural s && s.EmitTelemetryEvent);
+                        
+                        if (!msg.ShouldStop && emitStart)
+                        {
+                            var @start = new TelemetryEvent
+                            {
+                                PipelineName = Name,
+                                Component = f.GetType().Name.Split('`')[0],
+                                Service = msg.Service,
+                                Scope = TelemetryScope.Filter,
+                                Role = f is IAmStructural ? FilterRole.Structural : FilterRole.Business,
+                                Phase = TelemetryPhase.Start,
+                                MessageId = msg.CorrelationId,
+                                Timestamp = DateTimeOffset.UtcNow
+                            };
+                            if (msg.ShouldEmitTelemetry(@start)) msg.OnTelemetry?.Invoke(@start);
+                        }
+                        msg.OnLog?.Invoke($"INVOKING: {f.GetType().Name.Split('`')[0]}");
+
+                        var outcome = TelemetryOutcome.Success;
                         if (msg.ShouldStop)
                         {
-                            msg.OnLog?.Invoke($"Pipeline stopped: {msg.Execution.Reason}");
+                            outcome = TelemetryOutcome.Stopped;
+                            reason = msg.Execution.Reason;
+                            msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
                             return;
                         }
 
-                        if (DebugOn) msg.OnLog?.Invoke($"CURRENT FILTER: {f.GetType().Name}");
-                        await f.Execute(msg);
+                        try
+                        {
+                            await f.Execute(msg);
+                        }
+                        catch (Exception ex)
+                        {
+                            pipeOutcome = outcome = TelemetryOutcome.Exception;
+                            pipeStopReason = reason = ex.Message;
+                            //msg.OnLog?.Invoke($"EXCEPTION-XXXXXXXXXXXXXX: {f.GetType().Name.Split('`')[0]}: {ex}");
+                            throw;
+                        }
+                        finally
+                        {
+                            fsw.Stop();
+                            
+                            // Skip End event for self-emitting structural filters (they emit their own)
+                            if (!selfEmitting)
+                            {
+                                var @complete = new TelemetryEvent
+                                {
+                                    PipelineName = Name,
+                                    Component = f.GetType().Name.Split('`')[0],
+                                    Service = msg.Service,
+                                    Scope = TelemetryScope.Filter,
+                                    Role = f is IAmStructural ? FilterRole.Structural : FilterRole.Business,
+                                    Phase = TelemetryPhase.End,
+                                    MessageId = msg.CorrelationId,
+                                    Outcome = outcome,
+                                    Reason = reason,
+                                    Timestamp = DateTimeOffset.UtcNow,
+                                    Duration = fsw.ElapsedMilliseconds,
+                                    Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
+                                };
+                                msg.Execution.TelemetryAnnotations.Clear();
+                                if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
+                            }
+                            //msg.OnLog?.Invoke($"INFO: {msg.Execution.Reason}");
+                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]}");
+                            //msg.Execution.Reset();
+                        }
                     }
                 }
                 finally
                 {
                     foreach (var f in _finallyFilters)
                     {
+                        msg.OnLog?.Invoke($"FINALLY: {f.GetType().Name.Split('`')[0]}");
                         await f.Execute(msg);
                     }
                 }
@@ -127,7 +244,31 @@ namespace DataPipe.Core
             }
             finally
             {
+                // If filters stopped the pipeline without throwing, mark it as stopped.
+                if (pipeOutcome == TelemetryOutcome.Success && msg.Execution.IsStopped)
+                {
+                    pipeOutcome = TelemetryOutcome.Stopped;
+                    pipeStopReason = msg.Execution.Reason;
+                }
+
+                psw.Stop();
+                var @end = new TelemetryEvent
+                {
+                    PipelineName = Name,
+                    Component = Name,
+                    Service = msg.Service,
+                    Scope = TelemetryScope.Pipeline,
+                    Role = FilterRole.None,
+                    Phase = TelemetryPhase.End,
+                    Outcome = pipeOutcome,
+                    Reason = pipeStopReason,
+                    MessageId = msg.CorrelationId,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Duration = psw.ElapsedMilliseconds
+                };
+                if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 msg.OnComplete?.Invoke(msg);
+                msg.OnLog?.Invoke($"FINISHED: {Name} - Outcome: {pipeOutcome}");
             }
         }
 

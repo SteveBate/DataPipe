@@ -1,10 +1,11 @@
-using System.Net.Http;
-using System.Threading.Tasks;
 using DataPipe.Core;
 using DataPipe.Core.Contracts;
 using DataPipe.Core.Filters;
 using DataPipe.Sql.Contracts;
 using DataPipe.Sql.Filters;
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace DataPipe.Tests.Support
 {
@@ -72,7 +73,8 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            if (msg.Attempt < 1)
+            // Throw on first attempt, succeed on subsequent attempts
+            if (msg.Attempt == 1)
             {
                 throw new System.Exception("timeout");
             }
@@ -136,7 +138,10 @@ namespace DataPipe.Tests.Support
         public ComposedRetryWithTransactionFilter(int maxRetries, params Filter<T>[] filters)
         {
             _filters = filters;
-            _scope = new OnTimeoutRetry<T>(maxRetries, new StartTransaction<T>(_filters));
+            _scope = new OnTimeoutRetry<T>(maxRetries,
+                null,
+                customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
+                    new Sequence<T>(_filters));
         }
 
         public async Task Execute(T msg)

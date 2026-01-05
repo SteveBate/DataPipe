@@ -1,6 +1,10 @@
 using System;
+using System.Diagnostics;
+using System.Runtime.Serialization;
 using System.Threading.Tasks;
 using DataPipe.Core.Contracts;
+using DataPipe.Core.Contracts.Internal;
+using DataPipe.Core.Telemetry;
 
 namespace DataPipe.Core.Filters
 {
@@ -36,8 +40,10 @@ namespace DataPipe.Core.Filters
     ///        retryWhen: (ex, msg) => ex is TimeoutException || ex.Message.Contains("busy"),
     ///        customDelay: (attempt, msg) => TimeSpan.FromSeconds(attempt * 1.5)));
     /// </summary>
-    public class OnTimeoutRetry<T> : Filter<T> where T : BaseMessage, IAmRetryable
+    public class OnTimeoutRetry<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmRetryable
     {
+        public bool EmitTelemetryEvent => false; // emit own start event rather than parent so we can capture max attempts
+
         private readonly Filter<T>[] _filters;
         private readonly int _maxRetries;
 
@@ -46,6 +52,9 @@ namespace DataPipe.Core.Filters
 
         // Optional function to determine the delay before retrying (sliding, exponential, etc.)
         private readonly Func<int, T, TimeSpan> _defaultDelay;
+
+        // Track retry information for telemetry
+        private string? _lastRetryReason;
 
         public OnTimeoutRetry(
             int maxRetries,
@@ -90,27 +99,189 @@ namespace DataPipe.Core.Filters
             // Track max retries and current attempt in the message for debugging
             msg.MaxRetries = _maxRetries;
             msg.Attempt = 1;
+            _lastRetryReason = null;
 
-            // Loop until the message is completed or marked as stopped
-            while (!msg.Execution.IsStopped)
+            // Track timing and outcome for this structural filter
+            var structuralSw = Stopwatch.StartNew();
+            var structuralOutcome = TelemetryOutcome.Success;
+            var structuralReason = string.Empty;
+
+            // Build start attributes including any annotations from parent
+            var startAttributes = new Dictionary<string, object>(msg.Execution.TelemetryAnnotations)
             {
-                try
-                {
-                    // Run each filter sequentially
-                    foreach (var f in _filters)
-                    {
-                        if (msg.Execution.IsStopped) break;
-                        await f.Execute(msg);
-                    }
+                { "max-attempts", _maxRetries+1 }
+            };
+            
+            // Clear annotations after consuming them for Start event
+            msg.Execution.TelemetryAnnotations.Clear();
 
-                    // Exit loop on successful execution
-                    break;
-                }
-                catch (Exception ex) when (_retryWhen(ex, msg))
+            // Emit start event with max-attempts attribute
+            var @retryStart = new TelemetryEvent
+            {
+                Component = nameof(OnTimeoutRetry<T>),
+                PipelineName = msg.PipelineName,
+                Service = msg.Service,
+                Scope = TelemetryScope.Filter,
+                Role = FilterRole.Structural,
+                Phase = TelemetryPhase.Start,
+                MessageId = msg.CorrelationId,
+                Timestamp = DateTimeOffset.UtcNow,
+                Attributes = startAttributes
+            };
+            if (msg.ShouldEmitTelemetry(@retryStart)) msg.OnTelemetry?.Invoke(@retryStart);
+
+            try
+            {
+                // Loop until the message is completed or marked as stopped
+                while (!msg.Execution.IsStopped)
                 {
-                    // Handle retries asynchronously
-                    if (!await TryAgainAsync(msg, ex)) throw;
+                    try
+                    {
+                        // Run each filter sequentially
+                        foreach (var f in _filters)
+                        {
+                            var reason = string.Empty;
+                            var fsw = Stopwatch.StartNew();
+                            
+                            // Check if this structural filter manages its own telemetry
+                            var selfEmitting = f is IAmStructural structural && !structural.EmitTelemetryEvent;
+                            var emitStart = f is not IAmStructural || (f is IAmStructural s && s.EmitTelemetryEvent);
+                            
+                            if (!msg.ShouldStop && emitStart)
+                            {
+                                var @start = new TelemetryEvent
+                                {
+                                    Component = f.GetType().Name.Split('`')[0],
+                                    PipelineName = msg.PipelineName,
+                                    Service = msg.Service,
+                                    Scope = TelemetryScope.Filter,
+                                    Role = f is IAmStructural ? FilterRole.Structural : FilterRole.Business,
+                                    Phase = TelemetryPhase.Start,
+                                    MessageId = msg.CorrelationId,
+                                    Timestamp = DateTimeOffset.UtcNow,
+                                    Attributes = f is IAmStructural ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
+                                };
+                                if (msg.ShouldEmitTelemetry(@start)) msg.OnTelemetry?.Invoke(@start);
+                            }
+
+                            if (!msg.ShouldStop)
+                            {
+                                msg.OnLog?.Invoke($"INVOKING: {f.GetType().Name.Split('`')[0]}");
+                            }
+
+                            var outcome = TelemetryOutcome.Success;
+                            if (msg.ShouldStop)
+                            {
+                                outcome = TelemetryOutcome.Stopped;
+                                reason = msg.Execution.Reason;
+                                return;
+                            }
+
+                            try
+                            {
+                                await f.Execute(msg);
+                            }
+                            catch (Exception ex)
+                            {
+                                outcome = TelemetryOutcome.Exception;
+                                reason = ex.Message;
+                                throw;
+                            }
+                            finally
+                            {
+                                fsw.Stop();
+                                
+                                // Skip End event for self-emitting structural filters (they emit their own)
+                                if (!selfEmitting)
+                                {
+                                    var @complete = new TelemetryEvent
+                                    {
+                                        Component = f.GetType().Name.Split('`')[0],
+                                        PipelineName = msg.PipelineName,
+                                        Service = msg.Service,
+                                        Scope = TelemetryScope.Filter,
+                                        Role = f is IAmStructural ? FilterRole.Structural : FilterRole.Business,
+                                        Phase = TelemetryPhase.End,
+                                        MessageId = msg.CorrelationId,
+                                        Outcome = msg.ShouldStop ? TelemetryOutcome.Stopped : outcome,
+                                        Reason = msg.ShouldStop ? msg.Execution.Reason : reason,
+                                        Timestamp = DateTimeOffset.UtcNow,
+                                        Duration = fsw.ElapsedMilliseconds,
+                                        Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
+                                    };
+                                    msg.Execution.TelemetryAnnotations.Clear();
+                                    if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
+                                }
+
+                                if (msg.ShouldStop && f is not IAmStructural)
+                                {
+                                    outcome = TelemetryOutcome.Stopped;
+                                    reason = msg.Execution.Reason;
+                                    msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
+                                }
+
+                                msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]}");
+                            }
+                        }
+
+                        // Exit loop on successful execution
+                        break;
+                    }
+                    catch (Exception ex) when (_retryWhen(ex, msg))
+                    {
+                        // Handle retries asynchronously
+                        if (!await TryAgainAsync(msg, ex))
+                        {
+                            structuralOutcome = TelemetryOutcome.Exception;
+                            structuralReason = ex.Message;
+                            throw;
+                        }
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                structuralOutcome = TelemetryOutcome.Exception;
+                structuralReason = ex.Message;
+                throw;
+            }
+            finally
+            {
+                structuralSw.Stop();
+                
+                // Build end attributes including retry info if retries occurred
+                var endAttributes = new Dictionary<string, object>
+                {
+                    { "max-attempts", _maxRetries+1 },
+                    { "final-attempt", msg.Attempt }
+                };
+                
+                // Add retry information if any retries occurred
+                if (msg.Attempt > 1 && _lastRetryReason != null)
+                {
+                    endAttributes["retry"] = msg.Attempt - 1; // number of retries that occurred
+                    endAttributes["retry-reason"] = _lastRetryReason;
+                }
+                
+                var @retryEnd = new TelemetryEvent
+                {
+                    Component = nameof(OnTimeoutRetry<T>),
+                    PipelineName = msg.PipelineName,
+                    Service = msg.Service,
+                    Scope = TelemetryScope.Filter,
+                    Role = FilterRole.Structural,
+                    Phase = TelemetryPhase.End,
+                    MessageId = msg.CorrelationId,
+                    Outcome = structuralOutcome,
+                    Reason = structuralReason,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Duration = structuralSw.ElapsedMilliseconds,
+                    Attributes = endAttributes
+                };
+                if (msg.ShouldEmitTelemetry(@retryEnd)) msg.OnTelemetry?.Invoke(@retryEnd);
+                
+                // Clear any remaining annotations to prevent leaking
+                msg.Execution.TelemetryAnnotations.Clear();
             }
         }
 
@@ -122,12 +293,19 @@ namespace DataPipe.Core.Filters
         /// <returns>True if retry will occur, false if max attempts reached</returns>
         private async Task<bool> TryAgainAsync(T msg, Exception ex)
         {
-            if (msg.Attempt < msg.MaxRetries)
+            if (msg.Attempt <= msg.MaxRetries)
             {
+                // Track retry reason for telemetry
+                _lastRetryReason = ex.Message;
+                
+                // Set retry annotations so they appear on the next iteration's child filter Start events
+                msg.Execution.TelemetryAnnotations["retry"] = msg.Attempt;
+                msg.Execution.TelemetryAnnotations["retry-reason"] = ex.Message;
+                
                 // Call optional hook before incrementing attempt
                 msg.OnRetrying?.Invoke(msg.Attempt);
 
-                msg.OnLog?.Invoke($"Attempt {msg.Attempt}/{msg.MaxRetries} failed for {ex.Source} - retrying...");
+                msg.OnLog?.Invoke($"RETRYING {msg.Attempt}/{msg.MaxRetries}...");
                 msg.Attempt++;
 
                 // Wait asynchronously according to the delay strategy

@@ -6,7 +6,7 @@ namespace DataPipe.Core.Middleware
     /// <summary>
     /// ExceptionAspect catches unhandled exceptions from downstream filters, sets error status on the message, and invokes the OnError callback.
     /// A StatusCode of 500 is set to indicate an internal server error, and for convenience, similar to HTTP conventions.
-    /// Alternatively, you can create custom exception aspects such as a DatabaseExceptionAspect that writes unhandled exceptions to a database log.
+    /// Alternatively, you can create custom exception aspects such as a DatabaseExceptionAspect that writes unhandled exceptions to a database log, etc.
     /// </summary>
     public class ExceptionAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage
     {
