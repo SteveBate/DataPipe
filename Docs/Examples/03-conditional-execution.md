@@ -28,7 +28,7 @@ public async Task ProcessDocument(Document doc)
 }
 ```
 
-Alternative shows cleaner formatting if use-case is small enough:
+The alternative shows cleaner formatting if use-case is small enough:
 
 ```csharp
 public async Task ProcessDocument(Document doc)
@@ -56,5 +56,6 @@ public async Task ProcessDocument(Document doc)
 - If `true`, the nested filter executes
 - If `false`, it's skipped
 - Execution continues either way
+- The nested filter can itself be a composite or another conditional
 
 This keeps branching logic visible inside the pipeline definition, not buried in filter implementations.

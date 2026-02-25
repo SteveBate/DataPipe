@@ -1,6 +1,6 @@
 # Sequence
 
-`Sequence<T>` groups multiple filters into a single logical step. It's not about parallelism — it's about expressing intent.
+`Sequence<T>` groups multiple filters into a single logical step. It's not about parallelism - it's about expressing intent.
 
 ## Group related filters
 

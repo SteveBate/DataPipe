@@ -47,6 +47,6 @@ public async Task ProcessPayment(PaymentRequest request)
 
 Top to bottom. That's it.
 
-Each filter executes only after the previous one completes. If a filter stops execution using `msg.Execution.Stop()`, subsequent filters are skipped.
+Each filter executes only after the previous one completes, for the same message. If a filter stops execution using `msg.Execution.Stop()`, subsequent filters are skipped.
 
 This is intentional. The code describes what happens, in order, without requiring you to trace through middleware stacks or event handlers.

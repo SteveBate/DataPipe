@@ -15,7 +15,7 @@ public async Task ImportProducts(List<Product> products)
     pipeline.Use(new ExceptionAspect<ProductImportMessage>());
     
     // Logging aspect sits inside exception handling
-    pipeline.Use(new BasicLoggingAspect<ProductImportMessage>("ProductImport"));
+    pipeline.Use(new BasicConsoleLoggingAspect<ProductImportMessage>("ProductImport"));
     
     // Business logic
     pipeline.Add(new ValidateProductData());
@@ -29,7 +29,7 @@ public async Task ImportProducts(List<Product> products)
 
 ## Key points
 
-- `ExceptionAspect` should always be registered first — it wraps the entire pipeline to catch unhandled errors
+- `ExceptionAspect` should always be registered first - it wraps the entire pipeline to catch unhandled errors
 - Logging and other aspects are registered after
 - Aspects apply to all filters automatically
 - No try/catch blocks in business logic

@@ -4,9 +4,9 @@ DataPipe is a lightweight library for building in-memory processing pipelines in
 
 ## The BaseMessage class
 
-Messages in DataPipe are mutable data carriers that flow through pipelines. This is by design to keep things simple and efficient.
+Messages in DataPipe are mutable data carriers that flow through pipelines. This is by **design**. It keeps pipelines simple, avoids excessive allocations, and makes intent explicit
 
-Every message inherits from the built-in `BaseMessage` class, which provides logging and error handling hooks. While you can create custom message types by direcrtly inheriting from `BaseMessage`, it's best to extend it with a custom base class that has meaning for your domain, and then extend that for specific pipelines.
+Every message inherits from the built-in `BaseMessage` class, which provides logging and error handling hooks. While you *can* create custom message types by directly inheriting from BaseMessage, it’s usually better to introduce a domain-specific base class and then derive pipeline-specific messages from that.
 
 ```csharp
 public class SalesContext : BaseMessage
@@ -15,16 +15,18 @@ public class SalesContext : BaseMessage
 }
 ```
 
-If you want to use infrastructure features like retries, transactions, or sql connections, your custom 'context' class should implement the relevant interfaces such as `ISqlCommand`, `IAmRetryable`, `IAmCommittable`, etc. You can add your own interfaces for custom behaviors as needed. 
+If you want to use infrastructure features like retries, transactions, or sql connections, your custom 'context' class should implement the relevant interfaces such as `IUseSqlCommand`, `IAmRetryable`, `IAmCommittable`, etc. You can add your own interfaces for custom behaviors as needed. 
 
-See DataPipe.Sql and DataPipe.EntiryFramework for ready-made filters that work with these interfaces.
+The DataPipe.Sql package provides ready made filters for working with `IUseSqlCommand`.
+
+If you use Entity Framework, check out the Patterns directory for for ready-made filter implementations that you can copy into your project.
 
 ```csharp
-public class SalesContext : BaseMessage, ISqlCommand, IAmCommittable, IAmRetryable
+public class SalesContext : BaseMessage, IUseSqlCommand, IAmCommittable, IAmRetryable
 {
     // ... common properties for a sales domain
 
-    // ISqlCommand
+    // IUseSqlCommand
     public SqlCommand Command { get; set; }
 
     // IAmCommittable
@@ -52,7 +54,7 @@ public class OrderMessage : SalesContext
 
 With your message types defined, you can now create a series of filters, each responsible for a specific task in the workflow.
 
-### Filters
+## Filters
 
 A pipeline is made up of filters that process messages. You define the filters that meet the business use-case for (in this example) order processing. Each filter is stateless and focuses on a single responsibility. This allows for easy testing, reuse, re-ordering, and composition.
 
@@ -80,7 +82,7 @@ public class ProcessStandardOrder : Filter<OrderMessage>
     }
 }
 
-public classs AddOrderCreatedOutboxEvent : Filter<OrderMessage>
+public class AddOrderCreatedOutboxEvent : Filter<OrderMessage>
 {
     public async Task Execute(OrderMessage msg)
     {
@@ -101,56 +103,41 @@ public class MarkOrderAsFailed : Filter<OrderMessage>
 
 ## Aspects
 
-Aspects are cross-cutting concerns that can be applied to pipelines. Common aspects include logging, exception handling, and performance monitoring. You can create custom aspects by implementing the `IAspect<T>` interface.
+Aspects are cross-cutting concerns that can be applied to pipelines. Common aspects include logging, exception handling, and performance monitoring. You can create custom aspects by implementing the `IAspect<T>` and `IFilter<T>` interfaces.
 
-In general, you will always want to add at least the ExceptionAspect to your pipelines to ensure unhandled exceptions are caught so as not to crash your application. You could also create your own, for example, to write exceptions to a monitoring system, etc.
+In general, you will always want to add at least an exception handling Aspect to your pipelines to ensure unhandled exceptions allow the pipeline to fail gracefully. Either use the DataPipe provided one for simplicity or craft your own for your specific requirements, such as writing exceptions to a monitoring system, etc.
 
 ## Creating and invoking a pipeline
 
 With your message types and filters defined, you can now compose a pipeline that processes messages through these filters in sequence. The following example demonstrates a pipeline that processes an `OrderMessage`, applying aspects for exception handling and logging, handling transient network errors with retries, and using conditional logic to determine the processing path based on message properties.
 
 ```csharp
-    var pipeline = new DataPipe<OrderMessage>();
-    pipeline.Use(new ExceptionAspect<OrderMessage>());
-    pipeline.Use(new BasicLoggingAspect<OrderMessage>());
-    pipeline.Add(
-        new OnTimeoutRetry<OrderMessage>(maxRetries: 3,
-            new DownloadOrderFromClient<OrderMessage>(
-                new ValidateOrder()
-            )));
+var pipeline = new DataPipe<OrderMessage>();
+pipeline.Use(new ExceptionAspect<OrderMessage>());
+pipeline.Use(new BasicConsoleLoggingAspect<OrderMessage>());
+pipeline.Add(
+    new OnTimeoutRetry<OrderMessage>(maxRetries: 3,
+        new DownloadOrderFromClient<OrderMessage>(
+            new ValidateOrder()
+        )));
 
-    // Conditional processing
-    pipeline.Add(new Policy<OrderMessage>(m =>
-    {
-        if (!m.IsValid) return new MarkOrderAsFailed();
-
-        return m.RequiresSpecialProcessing
-            ? new RaiseSpecialOrderHandlingRequiredNotification()
-            : new OnTimeoutRetry<OrderMessage>(maxRetries: 3,
-                new StartTransaction<OrderMessage>(
-                    new OpenSqlConnection<OrderMessage>(
-                        new ProcessStandardOrder(),
-                        new AddOrderCreatedOutboxEvent()
-                    )
-                )
-            );
-    }));
-
-    // Execute pipeline
-    var msg = new OrderMessage { OrderId = "ORD123", RequiresSpecialProcessing = true };
-    await pipeline.Invoke(msg);
-    return Ok(msg.Result);
+// Execute pipeline
+var msg = new OrderMessage { OrderId = "ORD123", RequiresSpecialProcessing = true };
+await pipeline.Invoke(msg);
+return Ok(msg.Result);
 ```
 
-When you call invoke, the message flows through each filter in the order they were added. Each filter can modify the message, perform actions, and log information as needed. The exact path taken through the pipeline can vary based on message properties and conditions defined in the filters and tested by filters such as Policy and IfTrue, etc. At the end of execution, the message reflects the final state after all processing steps have been applied. But where does the Result property come from in this example?
+When you call invoke, the message flows through each filter in the order they were added. Each filter can modify the message, perform actions, and log information as needed. The exact path taken through the pipeline can vary based on message properties and conditions defined in the filters and tested by filters such as Policy and IfTrue, etc. At the end of execution, the message reflects the final state after all processing steps have been applied.
 
 ## Implementing the Result pattern
+
+You may have noticed that the pipeline returns msg.Result, even though we haven’t defined it yet. But where does the Result property come from in this example?
 
 Many applications benefit from a standardized way to represent the outcome of operations. The Result pattern encapsulates success and failure states, along with any relevant data or error messages. Implementing this pattern in your DataPipe messages can enhance clarity and consistency across your pipelines.
 
 The way to implement the Result pattern in DataPipe is to create a generic subclass of your custom base message class that includes a strongly typed Result property. This allows each message to carry its own result information, making it easy to check the outcome of operations as messages flow through the pipeline.
 
-First,create a base result class that encapsulates common result properties and behaviors.
+First, create a base result class that encapsulates common result properties and behaviors.
 
 ```csharp
 public class CommonResult
@@ -161,7 +148,7 @@ public class CommonResult
 }
 ```
 
-Then create a generic subclass of your custom base message class that includes a strongly typed Result property which itself must decend from CommonResult.
+Then create a generic subclass of your custom base message class that includes a strongly typed Result property which itself must descend from CommonResult.
 
 ```csharp
 // Generic version to provide strongly typed Result
@@ -175,7 +162,7 @@ public class SalesContext<TResult> : SalesContext where TResult : CommonResult, 
 }
 ```
 
-Now, our oringal OrderMessage example can be updated to inherit from SalesContext with a specific Result type.
+Now, our original OrderMessage example can be updated to inherit from SalesContext with a specific Result type.
 
 ```csharp
 public class OrderResult : CommonResult

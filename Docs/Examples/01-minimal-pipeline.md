@@ -16,7 +16,6 @@ public async Task ProcessOrder(string orderId)
     
     pipeline.Add(async msg =>
     {
-        msg.OnLog?.Invoke($"Processing order {msg.OrderId}");
         await SaveToDatabase(msg);
     });
     
@@ -27,8 +26,8 @@ public async Task ProcessOrder(string orderId)
 ## What's happening
 
 - The pipeline is created for a specific message type
-- A lambda is registered as a filter
+- A lambda is added as a filter
 - The message flows through when `Invoke` is called
 - Execution is in-memory and sequential
 
-Lambda filters and class-based filters are interchangeable. Use lambdas for simple steps, custom filter classes for reusable logic.
+Lambda filters and class-based filters are interchangeable within a pipeline. Use lambdas for simple steps, custom filter classes for reusable logic.

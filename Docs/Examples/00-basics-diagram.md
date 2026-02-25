@@ -15,6 +15,11 @@ Below is a diagram represent the Order Processing Pipeline example described in 
     └───────────┬────────────────┘
                 │
                 ▼
+    ┌────────────────────────────┐                    ┌────────────────────────────┐                    ┌─────────────────────────────┐ 
+    │     Telemetry Aspect       │───────────────────>│      Telemetry Adapter     │───────────────────>│ OTel, Sql Server, File, etc │
+    └───────────┬────────────────┘                    └────────────────────────────┘                    └─────────────────────────────┘
+                │
+                ▼                
     ┌────────────────────────────┐
     │ OnTimeoutRetry             │
     │ └─ DownloadOrderFromClient │

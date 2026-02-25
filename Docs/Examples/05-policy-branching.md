@@ -1,6 +1,7 @@
 # Policy Branching
 
-IfTrue is suitable for simple conditional execution.
+`IfTrue` is suitable for simple conditional execution.
+
 When you need to select exactly one path from multiple options based on message state, use `Policy<T>`. It evaluates a selector and executes the chosen filter.
 
 ## Select one path at runtime
@@ -22,8 +23,8 @@ public async Task RouteInvoice(Invoice invoice)
                 new Sequence<InvoiceMessage>(
                     new ReverseOriginalInvoice(),
                     new ApplyCreditToAccount()
-            ),
-            _ => null
+                ),
+                _ => null
         };
     }));
     
@@ -37,8 +38,9 @@ public async Task RouteInvoice(Invoice invoice)
 ## How it works
 
 - The selector function evaluates the message
-- Returns a filter to execute, or `null` to skip
+- Returns a filter to execute, or `null` to skip branching entirely
 - Only the selected branch runs
 - Use `Sequence<T>` to group multiple filters in a branch
+- After the selected filter (or sequence) completes, pipeline execution continues with the next registered filter.
 
 This keeps branching logic centralized and obvious when reading the pipeline.

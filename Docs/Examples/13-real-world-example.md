@@ -1,31 +1,31 @@
 # Real-World Example
 
-A realistic pipeline processing incoming supplier invoices, demonstrating validation, conditional routing, persistence, and response generation.
+Below is a more complete example showing validation, policy-driven routing, retries, and transactional composition.
 
 ```csharp
 public async Task ProcessSupplierInvoice(SupplierInvoiceDto dto)
 {
-    var pipeline = new DataPipe<SupplierInvoiceMessage>();
+    var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+    var policy = new MinimumDurationPolicy(50);
+    var adapter = new SqlServerTelemetryAdapter(TelemetryMode.PipelineAndErrors, AppSettings.Instance.TelemetryDb, policy);
     
-    // Cross-cutting concerns
+    // build the pipeline
+    var pipeline = new DataPipe<SupplierInvoiceMessage> { Name = "SupplierInvoice", TelemetryMode = TelemetryMode.PipelineAndFilters };    
     pipeline.Use(new ExceptionAspect<SupplierInvoiceMessage>());
-    pipeline.Use(new BasicLoggingAspect<SupplierInvoiceMessage>("SupplierInvoice"));
-    
-    // Validation
+    pipeline.Use(new SinkLoggingAspect<SupplierInvoiceMessage>(logger, "SupplierInvoice", env));
+    pipeline.Use(new TelemetryAspect<SupplierInvoiceMessage>(adapter));
     pipeline.Add(new ValidateInvoiceFormat());
     pipeline.Add(new VerifySupplierExists());
-    
-    // Conditional routing based on validation
+    // Decide how to process the invoice based on validation and business rules
     pipeline.Add(new Policy<SupplierInvoiceMessage>(msg =>
     {
-        if (!msg.IsValid)
-            return new RejectInvoiceWithErrors();
+        if (!msg.IsValid) return new RejectInvoiceWithErrors();
         
         return msg.RequiresManualReview
             ? new RouteToApprovalQueue()
             : new OnTimeoutRetry<SupplierInvoiceMessage>(maxRetries: 2,
                 new StartTransaction<SupplierInvoiceMessage>(
-                    new OpenSqlConnection<SupplierInvoiceMessage>(connectionString: "...",                        
+                    new OpenSqlConnection<SupplierInvoiceMessage>(connectionString: "...", 
                         new CreateInvoiceRecord(),
                         new MatchToPurchaseOrder(),
                         new UpdateAccountsPayable()
@@ -33,12 +33,11 @@ public async Task ProcessSupplierInvoice(SupplierInvoiceDto dto)
                 )
             );
     }));
-    
-    // Response generation
     pipeline.Add(new GenerateProcessingResponse());
     pipeline.Add(new NotifySupplier());
     
     var message = new SupplierInvoiceMessage { InvoiceDto = dto };
+
     await pipeline.Invoke(message);
 }
 ```
