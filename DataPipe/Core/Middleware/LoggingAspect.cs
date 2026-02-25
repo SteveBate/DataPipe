@@ -12,13 +12,13 @@ namespace DataPipe.Core.Middleware
     }
 
     /// <summary>
-    /// SinkLoggingAspect is an ILogger based aspect that writes to a configured logger in appsettings.
+    /// LoggingAspect is an ILogger based aspect that writes to a configured logger in appsettings.
     /// It can be used with any ILogger provider, such as Console, File, Seq, Application Insights, etc.
     /// Pass a title to identify the executing pipeline, and a log level for how verbose messages should be. 
     /// Any telemtry data is ignored due to the IsTelemetry = false scope.
     /// The BaseMessage Tag property allows data not specically included in the scope by setting msg.Tag before entering the pipeline.
     /// </summary>
-    public class SinkLoggingAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage 
+    public class LoggingAspect<T> : Aspect<T>, Filter<T> where T : BaseMessage 
     {
         private readonly ILogger _logger;
         private readonly string _title;
@@ -26,7 +26,7 @@ namespace DataPipe.Core.Middleware
         private readonly LogLevel _startEndLevel;
         private readonly PipeLineLogMode _mode;
 
-        public SinkLoggingAspect(ILogger logger, string title = "", string env = "Development", LogLevel startEndLevel = LogLevel.Information, PipeLineLogMode mode = PipeLineLogMode.Full)
+        public LoggingAspect(ILogger logger, string title = "", string env = "Development", LogLevel startEndLevel = LogLevel.Information, PipeLineLogMode mode = PipeLineLogMode.Full)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger)); 
             _title = title ?? string.Empty;
@@ -91,7 +91,9 @@ namespace DataPipe.Core.Middleware
             {
                 if (handler != null)
                 {
+                #pragma warning disable CS8601 // Possible null reference assignment.
                     msg.OnLog -= handler;
+                #pragma warning restore CS8601
                 }
 
                 if (_mode != PipeLineLogMode.ErrorsOnly)
