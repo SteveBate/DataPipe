@@ -13,11 +13,5 @@ namespace DataPipe.Core
         Task Execute(T msg);
     }
 
-    public class NullFilter<T> : Filter<T> where T : BaseMessage
-    {
-        public Task Execute(T msg)
-        {
-            return Task.CompletedTask;
-        }        
-    }
+
 }

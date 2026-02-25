@@ -16,18 +16,16 @@ namespace DataPipe.Core
     /// DataPipe represents a fully asynchronous, stateless, and thread-safe pipeline for processing messages of type T.
     /// 
     /// This class provides a flexible, composable architecture for building message processing pipelines with support for:
-    /// - Pre-processing filters that execute before the main pipeline
     /// - Multiple sequential filters that form the core pipeline logic
-    /// - Post-processing filters that execute after the main pipeline completes
     /// - Finally filters that execute even when errors occur, similar to finally blocks
     /// - Aspects that provide cross-cutting concerns (logging, metrics, error handling, etc.)
     /// - Conditional filter registration based on configuration-time state
     /// - Message-level control flow with stop conditions
     /// - Debug logging capabilities for troubleshooting pipeline execution
     /// 
-    /// The pipeline maintains execution order as: Pre -> Aspects -> Filters -> Finally -> Post
+    /// The pipeline maintains execution order as: Aspects -> Filters -> Finally
     /// Each filter receives the message and can modify it before passing to the next stage.
-    /// Aspects wrap the core filter execution and can intercept, log, or add handle exceptions.
+    /// Aspects wrap the core filter execution and can intercept, log, or handle exceptions.
     /// 
     /// The message being processed (of type T) carries state throughout the pipeline, including:
     /// - Execution metadata and control signals (stop conditions, cancellation tokens)
@@ -61,12 +59,6 @@ namespace DataPipe.Core
         public string Name { get; set; } = "DataPipe";
         public TelemetryMode TelemetryMode { get; set; } = TelemetryMode.Off;
         public bool DebugOn { get; set; }
-
-        /// Register a filter to run before everything else - useful for set up  such as copying files in to a working directory or reading config file values to set on the message before the main pipe runs
-        public void Pre(Filter<T> filter) => _preFilter = filter;
-
-        /// Register a filter to run after everything else has completed - useful for clean up work like removing files from a directory, etc
-        public void Post(Filter<T> filter) => _postFilter = filter;
 
         /// Register the individual steps that make up the DataPipe
         public void Add(Filter<T> filter) => _filters.Add(filter);
@@ -117,9 +109,7 @@ namespace DataPipe.Core
 
             try
             {
-                await _preFilter.Execute(msg);
                 await _aspects.First().Execute(msg);
-                await _postFilter.Execute(msg);
             }
             finally
             {
@@ -286,8 +276,6 @@ namespace DataPipe.Core
             public async Task Execute(T msg) => await _inner(msg);
         }
 
-        private Filter<T> _preFilter = new NullFilter<T>();
-        private Filter<T> _postFilter = new NullFilter<T>();
         private readonly List<Filter<T>> _filters = new List<Filter<T>>();
         private readonly List<Filter<T>> _finallyFilters = new List<Filter<T>>();
         private readonly List<Aspect<T>> _aspects = new List<Aspect<T>>();        
