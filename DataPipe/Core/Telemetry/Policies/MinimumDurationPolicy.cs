@@ -8,5 +8,5 @@ namespace DataPipe.Core.Telemetry.Policies;
 /// <param name="ms">value specifying the minimum duration in milliseconds</param>
 public class MinimumDurationPolicy(long ms) : ITelemetryPolicy
 {
-    public bool ShouldInclude(TelemetryEvent evt) => evt.Duration >= TimeSpan.FromMilliseconds(ms).Milliseconds;
+    public bool ShouldInclude(TelemetryEvent evt) => (evt.Scope == TelemetryScope.Pipeline) || (evt.DurationMs ?? 0) >= TimeSpan.FromMilliseconds(ms).Milliseconds;
 }

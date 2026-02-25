@@ -8,6 +8,7 @@ namespace DataPipe.Core.Telemetry
 {
     public record TelemetryEvent
     {
+        public string? Actor { get; init; }
         public Guid MessageId { get; init; }
         public string? Component { get; init; }
         public string? PipelineName { get; init; }
@@ -19,7 +20,7 @@ namespace DataPipe.Core.Telemetry
         public DateTimeOffset Timestamp { get; init; }
         public string? Reason { get; init; }
         public Exception? Exception { get; init; }
-        public long? Duration { get; set; }
+        public long? DurationMs { get; set; }
         public IDictionary<string, object>? Attributes { get; init; } = new Dictionary<string, object>();
     }
 

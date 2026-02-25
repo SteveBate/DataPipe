@@ -1,11 +1,10 @@
-namespace DataPipe.Core.Telemetry
+namespace DataPipe.Core.Telemetry;
+
+public enum TelemetryMode
 {
-  public enum TelemetryMode
-    {
-        Off,
-        PipelineOnly,
-        PipelineAndErrors,
-        PipelineErrorsAndStops,
-        PipelineAndFilters
-    }
+    Off,
+    PipelineOnly,
+    PipelineAndErrors,
+    PipelineErrorsAndStops,
+    PipelineAndFilters
 }
