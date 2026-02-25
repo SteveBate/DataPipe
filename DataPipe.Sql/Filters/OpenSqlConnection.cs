@@ -28,7 +28,7 @@ namespace DataPipe.Sql.Filters
     /// any filter in the chain to signal early termination by setting <see cref="Execution.IsStopped"/> to true.
     /// </para>
     /// </remarks>
-    /// <typeparam name="T">The message type that must inherit from <see cref="BaseMessage"/> and implement <see cref="ISqlCommand"/></typeparam>
+    /// <typeparam name="T">The message type that must inherit from <see cref="BaseMessage"/> and implement <see cref="IUseSqlCommand"/></typeparam>
     /// <param name="connectionString">The SQL connection string used to establish a database connection</param>
     /// <param name="filters">A variable-length array of filters to execute sequentially in the pipeline</param>
     public sealed class OpenSqlConnection<T>(string connectionString, params Filter<T>[] filters) : Filter<T>, IAmStructural where T : BaseMessage, IUseSqlCommand
@@ -68,6 +68,7 @@ namespace DataPipe.Sql.Filters
 
             var @cnnStart = new TelemetryEvent
             {
+                Actor = msg.Actor,
                 Component = nameof(OpenSqlConnection<T>),
                 PipelineName = msg.PipelineName,
                 Service = msg.Service,
@@ -97,6 +98,7 @@ namespace DataPipe.Sql.Filters
                         {
                             var @start = new TelemetryEvent
                             {
+                                Actor = msg.Actor,
                                 Component = f.GetType().Name.Split('`')[0],
                                 PipelineName = msg.PipelineName,
                                 Service = msg.Service,
@@ -142,6 +144,7 @@ namespace DataPipe.Sql.Filters
                             {
                                 var @complete = new TelemetryEvent
                                 {
+                                    Actor = msg.Actor,
                                     Component = f.GetType().Name.Split('`')[0],
                                     PipelineName = msg.PipelineName,
                                     Service = msg.Service,
@@ -152,7 +155,7 @@ namespace DataPipe.Sql.Filters
                                     Outcome = msg.ShouldStop ? TelemetryOutcome.Stopped : outcome,
                                     Reason = msg.ShouldStop ? msg.Execution.Reason : reason,
                                     Timestamp = DateTimeOffset.UtcNow,
-                                    Duration = fsw.ElapsedMilliseconds,
+                                    DurationMs = fsw.ElapsedMilliseconds,
                                     Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
                                 };
                                 msg.Execution.TelemetryAnnotations.Clear();
@@ -164,7 +167,7 @@ namespace DataPipe.Sql.Filters
                                 msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
                             }
                             
-                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]}");
+                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
                         }
                     }
                 }
@@ -183,6 +186,7 @@ namespace DataPipe.Sql.Filters
                 
                 var @cnnEnd = new TelemetryEvent
                 {
+                    Actor = msg.Actor,
                     Component = nameof(OpenSqlConnection<T>),
                     PipelineName = msg.PipelineName,
                     Service = msg.Service,
@@ -193,7 +197,7 @@ namespace DataPipe.Sql.Filters
                     Outcome = structuralOutcome,
                     Reason = structuralReason,
                     Timestamp = DateTimeOffset.UtcNow,
-                    Duration = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw.ElapsedMilliseconds,
                 };
                 if (msg.ShouldEmitTelemetry(@cnnEnd)) msg.OnTelemetry?.Invoke(@cnnEnd);
                 

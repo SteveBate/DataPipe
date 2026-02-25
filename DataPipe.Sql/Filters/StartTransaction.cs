@@ -72,6 +72,7 @@ namespace DataPipe.Sql.Filters
 
                 var @txnStart = new TelemetryEvent
                 {
+                    Actor = msg.Actor,
                     Component = nameof(StartTransaction<T>),
                     PipelineName = msg.PipelineName,
                     Service = msg.Service,
@@ -99,6 +100,7 @@ namespace DataPipe.Sql.Filters
                         {
                             var @start = new TelemetryEvent
                             {
+                                Actor = msg.Actor,
                                 Component = f.GetType().Name.Split('`')[0],
                                 PipelineName = msg.PipelineName,
                                 Service = msg.Service,
@@ -144,6 +146,7 @@ namespace DataPipe.Sql.Filters
                             {
                                 var @complete = new TelemetryEvent
                                 {
+                                    Actor = msg.Actor,
                                     Component = f.GetType().Name.Split('`')[0],
                                     PipelineName = msg.PipelineName,
                                     Service = msg.Service,
@@ -154,13 +157,13 @@ namespace DataPipe.Sql.Filters
                                     Outcome = msg.ShouldStop ? TelemetryOutcome.Stopped : outcome,
                                     Reason = msg.ShouldStop ? msg.Execution.Reason : reason,
                                     Timestamp = DateTimeOffset.UtcNow,
-                                    Duration = fsw.ElapsedMilliseconds,
+                                    DurationMs = fsw.ElapsedMilliseconds,
                                     Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
                                 };
                                 msg.Execution.TelemetryAnnotations.Clear();
                                 if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
                             }
-                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]}");
+                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
                         }
                     }
 
@@ -206,6 +209,7 @@ namespace DataPipe.Sql.Filters
 
                     var @txnEnd = new TelemetryEvent
                     {
+                        Actor = msg.Actor,
                         Component = nameof(StartTransaction<T>),
                         PipelineName = msg.PipelineName,
                         Service = msg.Service,
@@ -216,7 +220,7 @@ namespace DataPipe.Sql.Filters
                         Outcome = structuralOutcome,
                         Reason = structuralReason,
                         Timestamp = DateTimeOffset.UtcNow,
-                        Duration = structuralSw.ElapsedMilliseconds,
+                        DurationMs = structuralSw.ElapsedMilliseconds,
                         Attributes = endAttributes
                     };
                     if (msg.ShouldEmitTelemetry(@txnEnd)) msg.OnTelemetry?.Invoke(@txnEnd);

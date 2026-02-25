@@ -60,6 +60,7 @@ namespace DataPipe.Core.Filters
                     {
                         var @start = new TelemetryEvent
                         {
+                            Actor = msg.Actor,
                             Component = f.GetType().Name.Split('`')[0],
                             PipelineName = msg.PipelineName,
                             Service = msg.Service,
@@ -105,6 +106,7 @@ namespace DataPipe.Core.Filters
                         {
                             var @complete = new TelemetryEvent
                             {
+                                Actor = msg.Actor,
                                 Component = f.GetType().Name.Split('`')[0],
                                 PipelineName = msg.PipelineName,
                                 Service = msg.Service,
@@ -115,7 +117,7 @@ namespace DataPipe.Core.Filters
                                 Outcome = msg.ShouldStop ? TelemetryOutcome.Stopped : outcome,
                                 Reason = msg.ShouldStop ? msg.Execution.Reason : reason,
                                 Timestamp = DateTimeOffset.UtcNow,
-                                Duration = fsw.ElapsedMilliseconds,
+                                DurationMs = fsw.ElapsedMilliseconds,
                                 Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
                             };
                             msg.Execution.TelemetryAnnotations.Clear();
@@ -129,7 +131,7 @@ namespace DataPipe.Core.Filters
                             msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
                         }
 
-                        msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]}");
+                        msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
                     }
                 }
 
