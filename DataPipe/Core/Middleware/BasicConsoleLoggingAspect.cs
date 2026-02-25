@@ -22,7 +22,12 @@ namespace DataPipe.Core.Middleware
 
         public async Task Execute(T msg)
         {
-            msg.OnLog = (s) => Console.WriteLine($"{DateTime.Now.ToString(CultureInfo.CurrentCulture)} - {s}");
+            var previous = msg.OnLog;
+            msg.OnLog = (s) =>
+            {
+                previous?.Invoke(s);
+                Console.WriteLine($"{DateTime.Now.ToString(CultureInfo.CurrentCulture)} - {s}");
+            };
 
             msg.OnLog?.Invoke($"START: {this.title ?? msg.GetType().Name}");
             try
@@ -37,6 +42,7 @@ namespace DataPipe.Core.Middleware
             finally
             {
                 msg.OnLog?.Invoke($"END: {this.title ?? msg.GetType().Name}" + Environment.NewLine);
+                msg.OnLog = previous;
             }
         }
 
