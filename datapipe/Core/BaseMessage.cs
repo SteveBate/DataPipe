@@ -13,10 +13,11 @@ namespace DataPipe.Core
     /// It serves as the foundation for all messages processed within the pipeline.
     /// Derive from this class to create custom message types with additional properties and methods as needed for your application.
     /// </summary>
-    public abstract class BaseMessage
+    public abstract class BaseMessage : IDisposable
     {
+        public string? Actor { get; set; }
         public Guid CorrelationId { get; set; } = Guid.NewGuid();
-        public ServiceIdentity? Service { get; init; }
+        public ServiceIdentity? Service { get; set; }
         public string PipelineName { get; set; } = string.Empty;
 
         // Status information
@@ -29,19 +30,19 @@ namespace DataPipe.Core
             StatusMessage = message;
         }
 
-        // Real async cancellation
-        [JsonIgnore] public CancellationToken CancellationToken { get; internal set; }
+        // Async cancellation
+        [JsonIgnore] public CancellationToken CancellationToken { get; set; }
 
         // Flow control (replaces old CancellationToken.Stopped)
         [JsonIgnore] public ExecutionContext Execution { get; } = new();
 
         // Lifecycle hooks
-        [JsonIgnore] public Action<BaseMessage, Exception> OnError = delegate { };
-        [JsonIgnore] public Action<BaseMessage> OnStart = delegate { };
-        [JsonIgnore] public Action<BaseMessage> OnComplete = delegate { };
-        [JsonIgnore] public Action<BaseMessage> OnSuccess = delegate { };
-        [JsonIgnore] public Action<string> OnLog = delegate { };
-        [JsonIgnore] public Action<TelemetryEvent> OnTelemetry = delegate { };
+        [JsonIgnore] public Action<BaseMessage, Exception>? OnError = delegate { };
+        [JsonIgnore] public Action<BaseMessage>? OnStart = delegate { };
+        [JsonIgnore] public Action<BaseMessage>? OnComplete = delegate { };
+        [JsonIgnore] public Action<BaseMessage>? OnSuccess = delegate { };
+        [JsonIgnore] public Action<string>? OnLog = delegate { };
+        [JsonIgnore] public Action<TelemetryEvent>? OnTelemetry = delegate { };
 
         // Telemetry configuration
         [JsonIgnore] public TelemetryMode TelemetryMode { get; internal set; } = TelemetryMode.Off;
@@ -53,9 +54,9 @@ namespace DataPipe.Core
         public string Tag { get; set; } = string.Empty;
 
         // Constructor for async support
-        protected BaseMessage(CancellationToken? token = null)
+        protected BaseMessage()
         {
-            CancellationToken = token ?? CancellationToken.None;
+            CancellationToken = CancellationToken.None;
         }
 
         // Convenience property
@@ -76,6 +77,32 @@ namespace DataPipe.Core
                 TelemetryMode.PipelineAndFilters => true,
                 _ => false
             };
+        }
+
+        private bool _disposed = false;
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    // Clear all delegate references to allow GC
+                    OnError = null;
+                    OnStart = null;
+                    OnComplete = null;
+                    OnSuccess = null;
+                    OnLog = null;
+                    OnTelemetry = null;
+                }
+                _disposed = true;
+            }
         }
     }
 }

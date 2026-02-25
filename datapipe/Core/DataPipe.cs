@@ -94,13 +94,10 @@ namespace DataPipe.Core
         /// <summary>
         /// Invoke kicks off the unit of work including all registered aspects
         /// </summary>
-        public async Task Invoke(T msg, CancellationToken cancellationToken = default)
+        public async Task Invoke(T msg)
         {
             // Set the pipeline name on the message
             msg.PipelineName = Name;
-
-            // Attach the external cancellation token to the message
-            msg.CancellationToken = cancellationToken;
             
             // Set the telemetry mode on the message
             msg.TelemetryMode = TelemetryMode;
@@ -118,9 +115,16 @@ namespace DataPipe.Core
                     throw new InvalidOperationException("ServiceIdentity.Environment must be set when telemetry is enabled.");
             }
 
-            await _preFilter.Execute(msg);
-            await _aspects.First().Execute(msg);
-            await _postFilter.Execute(msg);
+            try
+            {
+                await _preFilter.Execute(msg);
+                await _aspects.First().Execute(msg);
+                await _postFilter.Execute(msg);
+            }
+            finally
+            {
+                msg.Dispose();
+            }
         }
 
         // Print out the order of execution for aspects followed by filters
@@ -136,6 +140,7 @@ namespace DataPipe.Core
             var psw = Stopwatch.StartNew();
             var @begin = new TelemetryEvent
             {
+                Actor = msg.Actor,
                 PipelineName = Name,
                 Component = Name,
                 Service = msg.Service,
@@ -148,7 +153,7 @@ namespace DataPipe.Core
             
             pipeOutcome = TelemetryOutcome.Success;
             msg.OnStart?.Invoke(msg);
-            msg.OnLog?.Invoke($"STARTING: {Name}");
+            msg.OnLog?.Invoke($"PIPELINE: {Name} - ACTOR: ({msg.Actor ?? "N/A"})");
             try
             {
                 if (DebugOn) msg.OnLog?.Invoke($"MESSAGE STATE: {msg.Dump()}");
@@ -168,6 +173,7 @@ namespace DataPipe.Core
                         {
                             var @start = new TelemetryEvent
                             {
+                                Actor = msg.Actor,
                                 PipelineName = Name,
                                 Component = f.GetType().Name.Split('`')[0],
                                 Service = msg.Service,
@@ -198,7 +204,6 @@ namespace DataPipe.Core
                         {
                             pipeOutcome = outcome = TelemetryOutcome.Exception;
                             pipeStopReason = reason = ex.Message;
-                            //msg.OnLog?.Invoke($"EXCEPTION-XXXXXXXXXXXXXX: {f.GetType().Name.Split('`')[0]}: {ex}");
                             throw;
                         }
                         finally
@@ -210,6 +215,7 @@ namespace DataPipe.Core
                             {
                                 var @complete = new TelemetryEvent
                                 {
+                                    Actor = msg.Actor,
                                     PipelineName = Name,
                                     Component = f.GetType().Name.Split('`')[0],
                                     Service = msg.Service,
@@ -220,15 +226,13 @@ namespace DataPipe.Core
                                     Outcome = outcome,
                                     Reason = reason,
                                     Timestamp = DateTimeOffset.UtcNow,
-                                    Duration = fsw.ElapsedMilliseconds,
+                                    DurationMs = fsw.ElapsedMilliseconds,
                                     Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
                                 };
                                 msg.Execution.TelemetryAnnotations.Clear();
                                 if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
                             }
-                            //msg.OnLog?.Invoke($"INFO: {msg.Execution.Reason}");
-                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]}");
-                            //msg.Execution.Reset();
+                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
                         }
                     }
                 }
@@ -254,6 +258,7 @@ namespace DataPipe.Core
                 psw.Stop();
                 var @end = new TelemetryEvent
                 {
+                    Actor = msg.Actor,
                     PipelineName = Name,
                     Component = Name,
                     Service = msg.Service,
@@ -264,11 +269,11 @@ namespace DataPipe.Core
                     Reason = pipeStopReason,
                     MessageId = msg.CorrelationId,
                     Timestamp = DateTimeOffset.UtcNow,
-                    Duration = psw.ElapsedMilliseconds
+                    DurationMs = psw.ElapsedMilliseconds
                 };
                 if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 msg.OnComplete?.Invoke(msg);
-                msg.OnLog?.Invoke($"FINISHED: {Name} - Outcome: {pipeOutcome}");
+                msg.OnLog?.Invoke($"PIPELINE: {Name} - Outcome: {pipeOutcome} ({psw.ElapsedMilliseconds}ms)");
             }
         }
 
