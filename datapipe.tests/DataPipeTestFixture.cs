@@ -9,6 +9,7 @@ using DataPipe.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -150,7 +151,7 @@ namespace DataPipe.Tests
             const int MaxRetries = 2;
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new OnTimeoutRetry<TestMessage>(MaxRetries,
                 null,
                 customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
@@ -172,7 +173,7 @@ namespace DataPipe.Tests
             const int MaxRetries = 2;
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new OnTimeoutRetry<TestMessage>(MaxRetries,
                 retryWhen: (ex, msg) => ex is HttpRequestException,
@@ -195,7 +196,7 @@ namespace DataPipe.Tests
             const int MaxRetries = 2;
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new OnTimeoutRetry<TestMessage>(MaxRetries,
                 retryWhen: (ex, msg) => ex is HttpRequestException,
@@ -222,7 +223,7 @@ namespace DataPipe.Tests
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new BasicConsoleLoggingAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new ComposedRetryWithTransactionFilter<TestMessage>(maxAttempts,
                 new MockTimeoutErroringFilter()));
             var msg = new TestMessage { Service = si };
@@ -241,7 +242,7 @@ namespace DataPipe.Tests
             var maxRetries = 2;
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new OnTimeoutRetry<TestMessage>(maxRetries,
                 null,
                 customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
@@ -263,7 +264,7 @@ namespace DataPipe.Tests
             var success = false;
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new CancellingFilter());
             sut.Add(new NoOpFilter());
             var msg = new TestMessage { OnSuccess = (m) => success = true, Service = si };
@@ -281,7 +282,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new CancellingFilter());
             sut.Add(new NoOpFilter());
             var msg = new TestMessage { Service = si };
@@ -300,7 +301,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new NoOpFilter());
             sut.Finally(new AlwaysRunFilter());
             var msg = new TestMessage { Service = si };
@@ -318,7 +319,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new CancellingFilter());
             sut.Finally(new AlwaysRunFilter());
             var msg = new TestMessage { Service = si };
@@ -336,7 +337,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new ErroringFilter());
             sut.Finally(new AlwaysRunFilter());
             var msg = new TestMessage { Service = si };
@@ -354,7 +355,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
 
             // Each word flows through the same filter instance via the message
             sut.Add(
@@ -378,7 +379,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new Repeat<TestMessage>(
                     new IncrementingNumberFilter(),
@@ -403,7 +404,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new RepeatUntil<TestMessage>(x => x.Number == 5,
                     new IncrementingNumberFilter()));
@@ -422,7 +423,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new Policy<TestMessage>(msg =>
                 {
@@ -449,7 +450,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>()); // to handle out of range exception
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new Policy<TestMessage>(msg => msg.Number switch
                 {
@@ -479,7 +480,7 @@ namespace DataPipe.Tests
             var msg = new TestMessage { Number = 0, Service = si };
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new Policy<TestMessage>(m =>
                 {
@@ -507,7 +508,7 @@ namespace DataPipe.Tests
             var msg = new TestMessage { Number = 0, Service = si };
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new Policy<TestMessage>(m =>
                 {
@@ -534,7 +535,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new IncrementingNumberFilter(),
                 new IncrementingNumberFilter(),
@@ -554,7 +555,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new IfTrue<TestMessage>(m => true,
                     new IncrementingNumberFilter(),
@@ -575,7 +576,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(
                 new IfTrue<TestMessage>(m => false,
                     new IncrementingNumberFilter(),
@@ -630,7 +631,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndErrors };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new JsonConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new ErroringFilter());
             var msg = new TestMessage { Service = si };
 
@@ -753,7 +754,7 @@ namespace DataPipe.Tests
             // then
             var filterCompleteEvent = telemetryEvents.Find(e => e.Scope == TelemetryScope.Filter && e.Phase == TelemetryPhase.End);
             Assert.IsNotNull(filterCompleteEvent);
-            Assert.IsTrue(filterCompleteEvent.Duration >= 10);
+            Assert.IsTrue(filterCompleteEvent.DurationMs >= 10);
         }
 
         [TestMethod]
@@ -804,7 +805,7 @@ namespace DataPipe.Tests
             var telemetryEvents = new List<TelemetryEvent>();
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Use(new TelemetryAspect<TestMessage>(new BasicConsoleTelemetryAdapter()));
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
             sut.Add(new IfTrue<TestMessage>(m => true, new IncrementingNumberFilter()));
             var msg = new TestMessage { OnTelemetry = (e) => telemetryEvents.Add(e), Service = si };
 
@@ -910,11 +911,11 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
-        public async Task Should_emit_telemetry_to_adapter_with_business_events_only_policy()
+        public async Task Should_emit_telemetry_to_adapter_with_pipeline_startend_and_business_events_only_policy()
         {
             // given
             var telemetryEvents = new List<TelemetryEvent>();
-            var adapter = new TestTelemetryAdapter(new BusinessOnlyPolicy());
+            var adapter = new TestTelemetryAdapter(new RolePolicy(TelemetryRole.Business));
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new TelemetryAspect<TestMessage>(adapter));
@@ -926,7 +927,11 @@ namespace DataPipe.Tests
 
             // then
             Assert.AreEqual(6, telemetryEvents.Count); // 6 events - start+end for pipeline, IfTrue, and IncrementingNumberFilter
-            Assert.AreEqual(2, adapter.Events.Count); // 2 business events only
+            Assert.AreEqual(4, adapter.Events.Count); // 4 events total via adapter and policy
+            Assert.AreEqual(2, adapter.Events.Count(e => e.Role == FilterRole.Business)); // 2 business events
+            Assert.AreEqual(2, adapter.Events.Count(e => e.Role == FilterRole.None)); // 2 pipeline events
+            Assert.IsTrue(telemetryEvents.First().Scope == TelemetryScope.Pipeline);
+            Assert.IsTrue(telemetryEvents.Last().Scope == TelemetryScope.Pipeline);
         }
 
         [TestMethod]
@@ -965,6 +970,92 @@ namespace DataPipe.Tests
 
             // then
             Assert.AreEqual(0, adapter.Events.Count, "No telemetry events should be captured when aspect is not added");
+        }
+
+        [TestMethod]
+        public void Should_only_include_events_when_all_policies_in_composite_agree()
+        {
+            // given
+            var businessOnlyPolicy = new RolePolicy(TelemetryRole.Business);
+            var structuralOnlyPolicy = new RolePolicy(TelemetryRole.Structural);
+            var compositePolicy = new CompositeTelemetryPolicy(businessOnlyPolicy, structuralOnlyPolicy);
+            var adapter = new TestTelemetryAdapter(compositePolicy);
+
+            var businessEvent = new TelemetryEvent
+            {
+                MessageId = Guid.NewGuid(),
+                Role = FilterRole.Business,
+                Phase = TelemetryPhase.Start,
+                Scope = TelemetryScope.Filter,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+
+            var structuralEvent = new TelemetryEvent
+            {
+                MessageId = Guid.NewGuid(),
+                Role = FilterRole.Structural,
+                Phase = TelemetryPhase.Start,
+                Scope = TelemetryScope.Filter,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+
+            var noneEvent = new TelemetryEvent
+            {
+                MessageId = Guid.NewGuid(),
+                Role = FilterRole.None,
+                Phase = TelemetryPhase.Start,
+                Scope = TelemetryScope.Filter,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+
+            // when - handle events through the adapter with composite policy
+            adapter.Handle(businessEvent);
+            adapter.Handle(structuralEvent);
+            adapter.Handle(noneEvent);
+            adapter.Flush();
+
+            // then - events should only be included if they satisfy ALL policies (Business AND Structural)
+            // Since no single event is both Business and Structural, no events should be captured
+            Assert.AreEqual(0, adapter.Events.Count, 
+                "Composite policy requires events to satisfy ALL policies; no event should match both Business and Structural roles");
+        }
+
+        [TestMethod]
+        public void Should_include_events_with_composite_policy_when_multiple_policies_agree()
+        {
+            // given
+            var businessOnlyPolicy = new RolePolicy(TelemetryRole.Business);
+            var defaultPolicy = new DefaultCaptureEverythingPolicy();
+            var compositePolicy = new CompositeTelemetryPolicy(businessOnlyPolicy, defaultPolicy);
+            var adapter = new TestTelemetryAdapter(compositePolicy);
+
+            var businessEvent = new TelemetryEvent
+            {
+                MessageId = Guid.NewGuid(),
+                Role = FilterRole.Business,
+                Phase = TelemetryPhase.Start,
+                Scope = TelemetryScope.Filter,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+
+            var structuralEvent = new TelemetryEvent
+            {
+                MessageId = Guid.NewGuid(),
+                Role = FilterRole.Structural,
+                Phase = TelemetryPhase.Start,
+                Scope = TelemetryScope.Filter,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+
+            // when - handle events through the adapter with composite policy
+            adapter.Handle(businessEvent);
+            adapter.Handle(structuralEvent);
+            adapter.Flush();
+
+            // then - only the business event should be captured (satisfies both policies)
+            Assert.AreEqual(1, adapter.Events.Count, 
+                "Composite policy should include only events that satisfy ALL policies");
+            Assert.AreEqual(FilterRole.Business, adapter.Events[0].Role);
         }
     }
 }

@@ -19,21 +19,14 @@ namespace DataPipe.Tests.Support
 
         public void Flush()
         {
+            if (_events.Count == 0) return;
             Events = [.. _events];
         }
 
         public void Handle(TelemetryEvent evt)
         {
-            if (_policy is null)
-            {
-                _events.Add(evt);
-                return;
-            }
-
-            if (_policy.ShouldInclude(evt))
-            {
-                _events.Add(evt);
-            }
+            if (!_policy.ShouldInclude(evt)) return;
+            _events.Add(evt);
         }
     }
 }
