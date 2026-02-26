@@ -39,7 +39,7 @@ There are a few things going on in the example below, but they’re all explicit
 - `SqlServerTelemetryAdapter` sends telemetry to SQL Server. This is a custom adapter that implements `ITelemetryAdapter` (see Docs/Patterns/Telemetry/Adapters for more)
 - The pipeline is named "Authorize" (for logging) and is configured to capture pipeline start/stop events and errors
 - An `ExceptionAspect` captures any unhandled exceptions to ensure the pipeline fails gracefully
-- A `SinkLoggingAspect` logs every step of the pipeline to a configured sink (console, file, etc) with environment context and can be used with any library that supports `ILogger`
+- A `LoggingAspect` logs every step of the pipeline to a configured sink (console, file, etc) with environment context and can be used with any library that supports `ILogger`
 - The `TelemetryAspect` is conditionally applied only in non-development environments and forwards events to the adapter, which in this case is SQL Server, and is governed by the policy defined earlier i.e only errors are captured
 - `OnTimeoutRetry` is a structural filter that scopes retries to the inner filters only 
 - `OpenSqlConnection` is another structural filter that opens a SQL connection to a database ensuring the connection is available for the inner filters then automatically disposes it afterwards
@@ -57,7 +57,7 @@ public async Task Authorize(AuthorizeMessage msg)
 
     var pipe = new DataPipe<AuthorizeMessage> { Name = "Authorize", TelemetryMode = TelemetryMode.PipelineAndErrors };
     pipe.Use(new ExceptionAspect<AuthorizeMessage>());
-    pipe.Use(new SinkLoggingAspect<AuthorizeMessage>(logger, "Authorize Request", env));
+    pipe.Use(new LoggingAspect<AuthorizeMessage>(logger, "Authorize Request", env));
     pipe.UseIf(env != "Development", new TelemetryAspect<AuthorizeMessage>(adapter));
     pipe.Add(
         new OnTimeoutRetry<AuthorizeMessage>(maxRetries: 3,

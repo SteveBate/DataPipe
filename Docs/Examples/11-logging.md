@@ -1,18 +1,18 @@
-# Logging with SinkLoggingAspect
+# Logging with LoggingAspect
 
-The `SinkLoggingAspect` provides structured logging for your pipelines using the standard `ILogger` interface. This means it works with any logging library that supports .NET's logging abstractions - Serilog, NLog, Application Insights, or any other provider.
+The `LoggingAspect` provides structured logging for your pipelines using the standard `ILogger` interface. This means it works with any logging library that supports .NET's logging abstractions - Serilog, NLog, Application Insights, or any other provider.
 
 ## Logging vs Telemetry
 
 In DataPipe, **logging** captures human-readable operational events and debugging information, while **telemetry** tracks metrics and system diagnostics. 
 
-The `SinkLoggingAspect` includes an `IsTelemetry = false` scope flag by default, allowing you to filter telemetry data separately from application logs. This keeps your log storage lean and your dashboards focused.
+The `LoggingAspect` includes an `IsTelemetry = false` scope flag by default, allowing you to filter telemetry data separately from application logs. This keeps your log storage lean and your dashboards focused.
 
 ```csharp
 // Your logging configuration can exclude telemetry
 // while capturing all application logs
 var logger = LoggerFactory.CreateLogger("DataPipe");
-pipeline.Use(new SinkLoggingAspect<OrderMessage>(
+pipeline.Use(new LoggingAspect<OrderMessage>(
     logger, 
     title: "OrderProcessing",
     mode: PipeLineLogMode.Full
@@ -58,7 +58,7 @@ public async Task ProcessOrder(OrderMessage order, ILogger logger)
     var pipeline = new DataPipe<OrderMessage>();
     
     // Add the logging aspect
-    pipeline.Use(new SinkLoggingAspect<OrderMessage>(
+    pipeline.Use(new LoggingAspect<OrderMessage>(
         logger,
         title: "OrderProcessing",
         env: "Production",
@@ -145,19 +145,19 @@ Use the `mode` parameter to adjust logging output based on your needs:
 
 ```csharp
 // Development: verbose logging for debugging
-pipeline.Use(new SinkLoggingAspect<OrderMessage>(
+pipeline.Use(new LoggingAspect<OrderMessage>(
     logger,
     mode: PipeLineLogMode.Full
 ));
 
 // Production: minimal overhead, errors only
-pipeline.Use(new SinkLoggingAspect<OrderMessage>(
+pipeline.Use(new LoggingAspect<OrderMessage>(
     logger,
     mode: PipeLineLogMode.ErrorsOnly
 ));
 
 // Monitoring: start and end only
-pipeline.Use(new SinkLoggingAspect<OrderMessage>(
+pipeline.Use(new LoggingAspect<OrderMessage>(
     logger,
     mode: PipeLineLogMode.StartEndOnly
 ));
@@ -202,7 +202,7 @@ public async Task ProcessSupplierInvoice(SupplierInvoiceDto dto, ILogger logger)
     pipeline.Use(new ExceptionAspect<SupplierInvoiceMessage>());
     
     // Then add logging with structured context
-    pipeline.Use(new SinkLoggingAspect<SupplierInvoiceMessage>(
+    pipeline.Use(new LoggingAspect<SupplierInvoiceMessage>(
         logger,
         title: "SupplierInvoiceProcessing",
         env: Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development",

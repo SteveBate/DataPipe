@@ -12,7 +12,7 @@ public async Task ProcessSupplierInvoice(SupplierInvoiceDto dto)
     // build the pipeline
     var pipeline = new DataPipe<SupplierInvoiceMessage> { Name = "SupplierInvoice", TelemetryMode = TelemetryMode.PipelineAndFilters };    
     pipeline.Use(new ExceptionAspect<SupplierInvoiceMessage>());
-    pipeline.Use(new SinkLoggingAspect<SupplierInvoiceMessage>(logger, "SupplierInvoice", env));
+    pipeline.Use(new LoggingAspect<SupplierInvoiceMessage>(logger, "SupplierInvoice", env));
     pipeline.Use(new TelemetryAspect<SupplierInvoiceMessage>(adapter));
     pipeline.Add(new ValidateInvoiceFormat());
     pipeline.Add(new VerifySupplierExists());
