@@ -1,4 +1,4 @@
-# Entity Framework
+# SQL Server Integration
 
 The DataPipe.Sql package provides ready-made filters for integrating DataPipe pipelines with Microsoft.Data.SqlClient. These filters help manage database transactions and ensure data consistency during pipeline execution.
 
