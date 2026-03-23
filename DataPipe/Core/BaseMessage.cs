@@ -36,6 +36,9 @@ namespace DataPipe.Core
         // Flow control (replaces old CancellationToken.Stopped)
         [JsonIgnore] public ExecutionContext Execution { get; } = new();
 
+        // Transient inter-filter state bag — opt-in storage for intermediate values during pipeline execution
+        [JsonIgnore] public TransientState State { get; } = new();
+
         // Lifecycle hooks
         [JsonIgnore] public Action<BaseMessage, Exception>? OnError = delegate { };
         [JsonIgnore] public Action<BaseMessage>? OnStart = delegate { };
@@ -100,6 +103,7 @@ namespace DataPipe.Core
                     OnSuccess = null;
                     OnLog = null;
                     OnTelemetry = null;
+                    State.Clear();
                 }
                 _disposed = true;
             }

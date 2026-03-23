@@ -39,6 +39,25 @@ public class SalesContext : BaseMessage, IUseSqlCommand, IAmCommittable, IAmRetr
 }
 ```
 
+## Transient inter-filter state
+
+Every `BaseMessage` includes a built-in `State` bag for storing intermediate values that are produced by one filter and consumed by another. This keeps your message classes focused on inputs and outputs, without needing to declare properties for every piece of throwaway intermediate data.
+
+```csharp
+// In a filter — store a value
+msg.State.Set("validatedLines", validLines);
+msg.State.Set("discountApplied", true);
+
+// In a later filter — retrieve it
+var lines = msg.State.Get<List<OrderLine>>("validatedLines");
+var discounted = msg.State.Get<bool>("discountApplied");
+
+// Safe retrieval with a default
+var cached = msg.State.GetOrDefault<string>("cachedRef", "none");
+```
+
+State is lazily allocated (no cost if unused) and automatically cleared when the pipeline completes. For values that drive `IfTrue` or `Policy` branching, or that are widely read across many filters, prefer declaring named properties on the message instead — see the SKILL.md for detailed guidance.
+
 ## Custom message types
 
 Now you're set to begin thinking in terms of business process flows. Create message types that represent specific operations in your domain by extending your custom base message class.

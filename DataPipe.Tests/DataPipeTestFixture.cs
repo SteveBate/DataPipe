@@ -1057,5 +1057,146 @@ namespace DataPipe.Tests
                 "Composite policy should include only events that satisfy ALL policies");
             Assert.AreEqual(FilterRole.Business, adapter.Events[0].Role);
         }
+
+        // TransientState tests
+
+        [TestMethod]
+        public async Task Should_store_and_retrieve_transient_state_between_filters()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg => { msg.State.Set("name", "DataPipe"); });
+            sut.Add(async msg => { msg.__Debug = msg.State.Get<string>("name"); });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("DataPipe", msg.__Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_store_and_retrieve_typed_values_in_transient_state()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                msg.State.Set("count", 42);
+                msg.State.Set("price", 19.99m);
+                msg.State.Set("timestamp", new DateTime(2026, 3, 23));
+            });
+            sut.Add(async msg =>
+            {
+                var count = msg.State.Get<int>("count");
+                var price = msg.State.Get<decimal>("price");
+                var timestamp = msg.State.Get<DateTime>("timestamp");
+                msg.__Debug = $"{count}-{price}-{timestamp:yyyy-MM-dd}";
+            });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("42-19.99-2026-03-23", msg.__Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_throw_when_getting_missing_transient_state_key()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg => { var x = msg.State.Get<string>("missing"); });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(500, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_return_default_when_using_GetOrDefault_for_missing_key()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                msg.__Debug = msg.State.GetOrDefault<string>("missing", "fallback");
+            });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("fallback", msg.__Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_check_existence_of_transient_state_key()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg => { msg.State.Set("exists", true); });
+            sut.Add(async msg =>
+            {
+                msg.__Debug = $"{msg.State.Has("exists")}-{msg.State.Has("missing")}";
+            });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("True-False", msg.__Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_remove_transient_state_key()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                msg.State.Set("temp", "value");
+                msg.State.Remove("temp");
+                msg.__Debug = msg.State.Has("temp").ToString();
+            });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("False", msg.__Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_overwrite_transient_state_value_with_same_key()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg => { msg.State.Set("val", "first"); });
+            sut.Add(async msg => { msg.State.Set("val", "second"); });
+            sut.Add(async msg => { msg.__Debug = msg.State.Get<string>("val"); });
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("second", msg.__Debug);
+        }
     }
 }

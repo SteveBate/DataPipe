@@ -93,6 +93,7 @@ public abstract class BaseMessage : IDisposable
 | `CancellationToken` | `CancellationToken` | Async cancellation support |
 | `Execution` | `ExecutionContext` | Flow control: `Stop(reason?)`, `Reset()`, `IsStopped`, `Reason`, `TelemetryAnnotations` |
 | `ShouldStop` | `bool` | Convenience: `Execution.IsStopped \|\| CancellationToken.IsCancellationRequested` |
+| `State` | `TransientState` | Lightweight bag for storing intermediate inter-filter values during pipeline execution |
 | `Tag` | `string` | General purpose tag for extra context in logs |
 | `OnError` | `Action<BaseMessage, Exception>?` | Error lifecycle callback |
 | `OnStart` | `Action<BaseMessage>?` | Start lifecycle callback |
@@ -318,9 +319,59 @@ msg.Result.ProcessedAt = DateTime.UtcNow;
 
 #### Internal / Transient Properties — Inter-Filter State
 
-**This is the most important pattern for filter implementors.** Many pipelines need intermediate state that is produced by one filter and consumed by another, but is not part of the request input or the final result. These properties live on the message and exist solely for the duration of the pipeline execution.
+**This is the most important pattern for filter implementors.** Many pipelines need intermediate state that is produced by one filter and consumed by another, but is not part of the request input or the final result.
 
-Use `internal` accessibility to prevent external code (controllers, tests of other layers) from accessing implementation details:
+DataPipe provides two approaches for managing transient inter-filter state:
+
+##### Approach 1: The State Bag (Recommended for Most Cases)
+
+`BaseMessage` includes a built-in `State` property — a lightweight, lazily-allocated bag for storing intermediate values during pipeline execution. Values are automatically cleared when the pipeline completes. This avoids the need to declare dedicated properties on the message class for data that only exists between filters.
+
+```csharp
+// Filter 1: produce intermediate state
+public class GroupBySupplier : Filter<CreateOrderMessage>
+{
+    public Task Execute(CreateOrderMessage msg)
+    {
+        var grouped = msg.Lines.GroupBy(l => l.SupplierId).ToList();
+        msg.State.Set("groupedOrders", grouped);
+        msg.State.Set("supplierCount", grouped.Count);
+        return Task.CompletedTask;
+    }
+}
+
+// Filter 2: consume it
+public class ProcessSupplierOrders : Filter<CreateOrderMessage>
+{
+    public Task Execute(CreateOrderMessage msg)
+    {
+        var grouped = msg.State.Get<List<IGrouping<string, OrderLine>>>("groupedOrders");
+        var count = msg.State.Get<int>("supplierCount");
+        msg.OnLog?.Invoke($"Processing {count} supplier groups");
+        return Task.CompletedTask;
+    }
+}
+```
+
+**State bag API:**
+
+| Method | Purpose |
+|--------|--------|
+| `Set<T>(key, value)` | Store a value |
+| `Get<T>(key)` | Retrieve a value (throws `KeyNotFoundException` if missing) |
+| `GetOrDefault<T>(key, default?)` | Retrieve a value or return a default if missing |
+| `Has(key)` | Check if a key exists |
+| `Remove(key)` | Remove a key |
+| `Clear()` | Remove all values |
+
+The State bag is ideal when:
+- Intermediate data is consumed by one or two downstream filters only
+- You want to keep message classes focused on inputs and outputs
+- The transient data doesn't drive `IfTrue` / `Policy` branching (use message properties for that — predicates should read named properties, not string-keyed bag values)
+
+##### Approach 2: Internal Properties on the Message
+
+For transient state that is widely referenced across many filters, or that drives conditional branching, declaring `internal` properties on the message remains the clearest approach:
 
 ```csharp
 public class RefreshTokenMessage : AuthContext<RefreshTokenResult>
@@ -336,7 +387,7 @@ public class RefreshTokenMessage : AuthContext<RefreshTokenResult>
 }
 ```
 
-Or group transient state into an internal class for clarity:
+Or group transient state into internal properties for clarity:
 
 ```csharp
 public class CreateOrderMessage : SalesCommandContext<OrderResult>
@@ -349,29 +400,23 @@ public class CreateOrderMessage : SalesCommandContext<OrderResult>
     internal bool IsValid { get; set; }
     internal int GeneratedOrderNumber { get; set; }
     internal List<PurchaseOrder> GroupedPurchaseOrders { get; set; } = new();
-    internal int CurrentContainerId { get; set; }
-    internal string CurrentPoNumber { get; set; }
 }
 ```
 
-#### Using `dynamic` for Ad-Hoc Transient Data
+Internal properties are preferred over the State bag when:
+- The value drives `IfTrue` or `Policy` predicates (named properties are more readable in lambdas)
+- Many filters read the same value (a named property is self-documenting)
+- You need compile-time type safety without specifying `<T>` on retrieval
 
-Some projects add a `dynamic Data` property to the context for loosely-typed transient storage when you don't want to declare named properties:
+##### Choosing Between State Bag and Internal Properties
 
-```csharp
-public class AppContext : BaseMessage
-{
-    public dynamic Data { get; set; } = new System.Dynamic.ExpandoObject();
-}
-
-// In a filter:
-msg.Data.TempCalculation = 42.5;
-
-// In a later filter:
-var calc = (double)msg.Data.TempCalculation;
-```
-
-Prefer named internal properties over `dynamic` for type safety, but `dynamic` can be useful for rapid prototyping.
+| Scenario | Use |
+|----------|-----|
+| Intermediate data passed between 1–2 adjacent filters | `msg.State` |
+| Data that drives `IfTrue` / `Policy` branching | Internal property |
+| Widely referenced across many filters | Internal property |
+| Rapid prototyping or throwaway intermediates | `msg.State` |
+| Keeping the message class lean and focused | `msg.State` |
 
 #### Data Flow Example — How Filters Chain Through Properties
 
@@ -404,9 +449,9 @@ Each filter reads what it needs from the message and writes what it produces bac
 
 1. **Input properties** — public, set before `Invoke()`
 2. **Result properties** — on the strongly-typed `Result`, populated by filters
-3. **Inter-filter state** — use `internal` properties on the message for intermediate data
+3. **Inter-filter state** — use `msg.State` for transient intermediates, or `internal` properties for widely-referenced or branching-related state
 4. **Sensitive state** — use `internal` classes/properties to prevent leakage outside the assembly
-5. **Flags and control properties** — booleans like `IsValid`, `NothingToDo`, `RequiresSpecialProcessing` that drive `IfTrue` / `Policy` branching
+5. **Flags and control properties** — booleans like `IsValid`, `NothingToDo`, `RequiresSpecialProcessing` that drive `IfTrue` / `Policy` branching (always declare these as named properties, not State bag values)
 6. **Never use static or shared mutable state** — messages are the only communication channel
 
 ---
