@@ -9,6 +9,8 @@
 # Local History for Visual Studio Code
 .history/
 
+.DS_Store
+
 # Build results
 [Bb]in/
 [Oo]bj/

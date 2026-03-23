@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-[assembly: InternalsVisibleTo("datapipe.tests")]
+[assembly: InternalsVisibleTo("DataPipe.Tests")]
 namespace DataPipe.Core
 {
     /// <summary>

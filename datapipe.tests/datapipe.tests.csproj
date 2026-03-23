@@ -9,6 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DataPipe.Sql\DataPipe.Sql.csproj" />
-    <ProjectReference Include="..\datapipe\DataPipe.csproj" />
+    <ProjectReference Include="..\DataPipe\DataPipe.csproj" />
   </ItemGroup>
 </Project>
