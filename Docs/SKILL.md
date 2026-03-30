@@ -1,6 +1,9 @@
-# DataPipe Skill
+---
+name: datapipe
+description: A lightweight, in-memory pipeline library for .NET.
+---
 
-> **Version:** SCB.DataPipe 4.5.7 / SCB.DataPipe.Sql 4.5.7  
+> **Version:** SCB.DataPipe 4.6.0 / SCB.DataPipe.Sql 4.6.0  
 > **Platform:** .NET 8+  
 > **Packages:** `SCB.DataPipe`, `SCB.DataPipe.Sql` (optional, for SQL Server)
 
@@ -120,6 +123,8 @@ Implement contracts on the context class to enable built-in structural filters:
 | `IUseSqlCommand` | DataPipe.Sql | Enables `OpenSqlConnection<T>` | `SqlCommand Command { get; set; }` |
 | `IAmCommittable` | DataPipe.Core | Enables `StartTransaction<T>` commit/rollback | `bool Commit { get; set; }` |
 | `IAmRetryable` | DataPipe.Core | Enables `OnTimeoutRetry<T>` | `int Attempt { get; set; }`, `int MaxRetries { get; set; }`, `Action<int> OnRetrying { get; set; }` |
+
+`OnCircuitBreak<T>` does not require a message contract. It uses an external `CircuitBreakerState` object to track circuit state, which is designed to be shared across pipeline invocations (e.g. as a DI singleton).
 
 ### 4.2 Basic Context (No Strongly-Typed Result)
 
@@ -721,27 +726,6 @@ pipe.Add(new IfTrue<CommodityMessage>(
     new CallGovUkCommodityApi()));
 ```
 
-#### Pattern: Debug/Diagnostic Filter (Development Only)
-
-Serialise the entire message for diagnostic purposes, gated by environment:
-
-```csharp
-public class DumpMessageState : Filter<T> where T : BaseMessage
-{
-    public Task Execute(T msg)
-    {
-        var json = JsonSerializer.Serialize(msg, new JsonSerializerOptions { WriteIndented = true });
-        msg.OnLog?.Invoke($"MESSAGE STATE:\n{json}");
-        return Task.CompletedTask;
-    }
-}
-
-// Only added in development
-pipeline.Add(new IfTrue<OrderMessage>(
-    msg => Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development",
-    new DumpMessageState<OrderMessage>()));
-```
-
 ---
 
 ## 6. Built-in Structural Filters
@@ -840,7 +824,39 @@ pipeline.Add(new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
 
 **Key:** Retries are scoped — only the wrapped filters are retried, not the entire pipeline.
 
-### 6.5 RepeatUntil\<T\> — Conditional Loop
+### 6.5 OnCircuitBreak\<T\> — Circuit Breaker
+
+Wraps child filters with the circuit breaker pattern. After a configurable number of consecutive failures, the circuit trips to Open and all subsequent calls fail fast. After a break duration, exactly one probe attempt is allowed to test recovery — all other concurrent requests fail fast until the probe succeeds or fails.
+
+`CircuitBreakerState` is thread-safe and designed to be shared as a singleton across pipeline invocations so that all pipelines targeting the same external resource share the same circuit:
+
+```csharp
+// DI registration (shared across all pipelines hitting the same resource)
+services.AddSingleton(new CircuitBreakerState());
+```
+
+```csharp
+// Basic usage (default: 5 failures, 30s break)
+pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
+    filters: new CallPaymentGateway()));
+
+// Custom thresholds
+pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
+    failureThreshold: 3,
+    breakDuration: TimeSpan.FromMinutes(1),
+    filters: new CallPaymentGateway()));
+
+// Combined with retry (retry inside circuit breaker)
+pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
+    filters: new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
+        new CallPaymentGateway())));
+```
+
+**Key:** When one pipeline trips the circuit, all pipelines sharing the same `CircuitBreakerState` fail fast immediately. Place retry _inside_ the circuit breaker so that a full retry cycle counts as one circuit attempt.
+
+When the circuit is open (or half-open with a probe already in progress), `OnCircuitBreak` throws `CircuitBreakerOpenException`. The built-in `ExceptionAspect<T>` catches this and sets `StatusCode = 503` (Service Unavailable), distinguishing circuit breaker rejections from general server errors (500).
+
+### 6.6 RepeatUntil\<T\> — Conditional Loop
 
 Loops child filters until the predicate returns `true`:
 
@@ -853,7 +869,7 @@ pipeline.Add(new RepeatUntil<BatchMessage>(
 ));
 ```
 
-### 6.6 Repeat\<T\> — Unconditional Loop
+### 6.7 Repeat\<T\> — Unconditional Loop
 
 Loops indefinitely. Use `msg.Execution.Stop()` inside a filter to break:
 
@@ -869,7 +885,7 @@ pipeline.Add(new Repeat<QueueMessage>(
 
 `Execution.Reset()` clears the stopped state between loop iterations so `Stop()` can be used for loop control without permanently halting the pipeline.
 
-### 6.7 ForEach\<TMessage, TItem\> — Iterate Over Collection
+### 6.8 ForEach\<TMessage, TItem\> — Iterate Over Collection
 
 Iterates over an enumerable, executing child filters for each item:
 
@@ -882,7 +898,7 @@ pipeline.Add(new ForEach<OrderMessage, OrderLine>(
 ));
 ```
 
-### 6.8 OpenSqlConnection\<T\> — Scoped SQL Connection
+### 6.9 OpenSqlConnection\<T\> — Scoped SQL Connection
 
 Requires `IUseSqlCommand` on the message. Opens a SQL connection for child filters:
 
@@ -909,7 +925,7 @@ public async Task Execute(LoadUserMessage msg)
 }
 ```
 
-### 6.9 StartTransaction\<T\> — SQL Transaction
+### 6.10 StartTransaction\<T\> — SQL Transaction
 
 Requires `IAmCommittable` + `IUseSqlCommand` on the message. Wraps child filters in a SQL transaction. Commits if `msg.Commit` is true and no errors; rolls back otherwise:
 
@@ -935,7 +951,7 @@ pipeline.Add(new StartTransaction<OrderMessage>(IsolationLevel.Serializable,
 - An exception is thrown
 - `msg.Execution.Stop()` was called
 
-### 6.10 Standard Nesting Convention
+### 6.11 Standard Nesting Convention
 
 The production-proven nesting pattern for data mutation pipelines:
 
@@ -987,6 +1003,13 @@ Catches unhandled exceptions and sets error status on the message. Use this or a
 pipeline.Use(new ExceptionAspect<OrderMessage>());
 ```
 
+`ExceptionAspect` distinguishes circuit breaker rejections from other errors:
+
+| Exception | StatusCode | Meaning |
+|-----------|------------|----------|
+| `CircuitBreakerOpenException` | 503 | Service Unavailable — circuit breaker rejected the request |
+| All other exceptions | 500 | Internal Server Error |
+
 ### 7.2 BasicConsoleLoggingAspect\<T\>
 
 Simple console-based pipeline logging. Useful for development and console apps:
@@ -1029,7 +1052,7 @@ When mode is `Full`, these messages are captured with the same scope and context
 
 ### 7.4 TelemetryAspect\<T\>
 
-Forwards telemetry events to an `ITelemetryAdapter`. See [Section 10: Telemetry](#10-telemetry).
+Forwards telemetry events to an `ITelemetryAdapter`. See [Section 14: Telemetry](Examples/14-telemetry.md).
 
 ```csharp
 pipeline.Use(new TelemetryAspect<OrderMessage>(adapter));
@@ -2196,6 +2219,7 @@ Pipeline.Invoke(msg)
 | `Policy<T>(selector)` | `BaseMessage` | Multi-branch runtime dispatch |
 | `Sequence<T>(filters...)` | `BaseMessage` | Group filters as one logical step |
 | `OnTimeoutRetry<T>(max, filters...)` | `IAmRetryable` | Retry on timeout |
+| `OnCircuitBreak<T>(state, threshold?, duration?, filters...)` | `BaseMessage` | Circuit breaker pattern |
 | `RepeatUntil<T>(predicate, filters...)` | `BaseMessage` | Loop until predicate true |
 | `Repeat<T>(filters...)` | `BaseMessage` | Infinite loop (break via Stop) |
 | `ForEach<TMsg, TItem>(selector, setter, filters...)` | `BaseMessage` | Iterate collection |
@@ -2212,7 +2236,7 @@ Pipeline.Invoke(msg)
 
 | Aspect | Purpose |
 |--------|---------|
-| `ExceptionAspect<T>` | Basic exception handling |
+| `ExceptionAspect<T>` | Exception handling (500 general, 503 circuit breaker) |
 | `BasicConsoleLoggingAspect<T>(title?)` | Console logging |
 | `LoggingAspect<T>(logger, title?, env?, level?, mode?)` | Structured ILogger logging |
 | `TelemetryAspect<T>(adapter)` | Telemetry forwarding |
@@ -2224,6 +2248,13 @@ Pipeline.Invoke(msg)
 | `IUseSqlCommand` | DataPipe.Sql | `SqlCommand Command` |
 | `IAmCommittable` | DataPipe.Core | `bool Commit` |
 | `IAmRetryable` | DataPipe.Core | `int Attempt`, `int MaxRetries`, `Action<int> OnRetrying` |
+
+### Shared State Objects
+
+| Class | Package | Purpose |
+|-------|---------|--------|
+| `CircuitBreakerState` | DataPipe.Core | Shared circuit state for `OnCircuitBreak<T>` (register as DI singleton) |
+| `CircuitBreakerOpenException` | DataPipe.Core | Thrown when circuit is open; caught by `ExceptionAspect` → 503 |
 
 ### Telemetry Adapters
 

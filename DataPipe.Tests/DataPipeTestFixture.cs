@@ -1,4 +1,5 @@
 using DataPipe.Core;
+using DataPipe.Core.Contracts;
 using DataPipe.Core.Filters;
 using DataPipe.Core.Middleware;
 using DataPipe.Core.Telemetry;
@@ -1197,6 +1198,279 @@ namespace DataPipe.Tests
 
             // then
             Assert.AreEqual("second", msg.__Debug);
+        }
+
+        // ── OnCircuitBreak ──────────────────────────────────────────────
+
+        [TestMethod]
+        public async Task Should_execute_wrapped_filters_when_circuit_is_closed()
+        {
+            // given
+            var state = new CircuitBreakerState();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(1, msg.Number);
+            Assert.AreEqual(CircuitState.Closed, state.Status);
+        }
+
+        [TestMethod]
+        public async Task Should_trip_circuit_to_open_after_reaching_failure_threshold()
+        {
+            // given
+            var state = new CircuitBreakerState();
+            var failureThreshold = 3;
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                failureThreshold: failureThreshold,
+                filters: new AlwaysFailingFilter()));
+
+            // when — invoke enough times to reach the threshold
+            for (int i = 0; i < failureThreshold; i++)
+            {
+                await sut.Invoke(new TestMessage());
+            }
+
+            // then
+            Assert.AreEqual(CircuitState.Open, state.Status);
+            Assert.AreEqual(failureThreshold, state.FailureCount);
+            Assert.IsNotNull(state.LockedUntil);
+        }
+
+        [TestMethod]
+        public async Task Should_fail_fast_when_circuit_is_open()
+        {
+            // given
+            var state = new CircuitBreakerState
+            {
+                Status = CircuitState.Open,
+                LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5)
+            };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — filter was NOT executed; circuit blocked it
+            Assert.AreEqual(0, msg.Number);
+            Assert.AreEqual(503, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_transition_to_half_open_after_break_duration_expires()
+        {
+            // given — circuit is open but break duration has elapsed
+            var state = new CircuitBreakerState
+            {
+                Status = CircuitState.Open,
+                LockedUntil = DateTimeOffset.UtcNow.AddSeconds(-1)
+            };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — probe succeeded and circuit is closed again
+            Assert.AreEqual(1, msg.Number);
+            Assert.AreEqual(CircuitState.Closed, state.Status);
+            Assert.AreEqual(0, state.FailureCount);
+        }
+
+        [TestMethod]
+        public async Task Should_reopen_circuit_when_half_open_probe_fails()
+        {
+            // given — circuit is open but break duration has elapsed (probe attempt)
+            var state = new CircuitBreakerState
+            {
+                Status = CircuitState.Open,
+                LockedUntil = DateTimeOffset.UtcNow.AddSeconds(-1)
+            };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new AlwaysFailingFilter()));
+            var msg = new TestMessage();
+
+            // when — the probe attempt fails
+            await sut.Invoke(msg);
+
+            // then — circuit trips straight back to Open
+            Assert.AreEqual(CircuitState.Open, state.Status);
+            Assert.IsNotNull(state.LockedUntil);
+        }
+
+        [TestMethod]
+        public async Task Should_reset_failure_count_on_success()
+        {
+            // given — circuit has accumulated some failures but not tripped yet
+            var state = new CircuitBreakerState { FailureCount = 3 };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                failureThreshold: 5,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(1, msg.Number);
+            Assert.AreEqual(0, state.FailureCount);
+            Assert.AreEqual(CircuitState.Closed, state.Status);
+        }
+
+        [TestMethod]
+        public async Task Should_share_circuit_state_across_multiple_pipeline_invocations()
+        {
+            // given — shared state simulating a DI singleton
+            var sharedState = new CircuitBreakerState();
+            var failureThreshold = 2;
+
+            var pipeline1 = new DataPipe<TestMessage>();
+            pipeline1.Use(new ExceptionAspect<TestMessage>());
+            pipeline1.Add(new OnCircuitBreak<TestMessage>(sharedState,
+                failureThreshold: failureThreshold,
+                filters: new AlwaysFailingFilter()));
+
+            var pipeline2 = new DataPipe<TestMessage>();
+            pipeline2.Use(new ExceptionAspect<TestMessage>());
+            pipeline2.Add(new OnCircuitBreak<TestMessage>(sharedState,
+                failureThreshold: failureThreshold,
+                filters: new IncrementingNumberFilter()));
+
+            // when — pipeline1 trips the circuit
+            for (int i = 0; i < failureThreshold; i++)
+            {
+                await pipeline1.Invoke(new TestMessage());
+            }
+
+            // then — pipeline2 is also blocked
+            var msg = new TestMessage { Number = 0 };
+            await pipeline2.Invoke(msg);
+            Assert.AreEqual(0, msg.Number, "Pipeline2 should have been blocked by the shared open circuit");
+            Assert.AreEqual(503, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_emit_circuit_breaker_telemetry_events_with_circuit_state_attributes()
+        {
+            // given
+            var state = new CircuitBreakerState();
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0, Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — should have circuit breaker start and end events with attributes
+            var cbEvents = adapter.Events
+                .Where(e => e.Component == "OnCircuitBreak" && e.Scope == TelemetryScope.Filter)
+                .ToList();
+
+            Assert.IsTrue(cbEvents.Count >= 2, "Expected at least start and end events for OnCircuitBreak");
+
+            var startEvent = cbEvents.First(e => e.Phase == TelemetryPhase.Start);
+            Assert.AreEqual("Closed", startEvent.Attributes["circuit-state"].ToString());
+            Assert.AreEqual(5, (int)startEvent.Attributes["failure-threshold"]);
+
+            var endEvent = cbEvents.First(e => e.Phase == TelemetryPhase.End);
+            Assert.AreEqual("Closed", endEvent.Attributes["circuit-state"].ToString());
+            Assert.AreEqual(0, (int)endEvent.Attributes["failure-count"]);
+            Assert.AreEqual(false, (bool)endEvent.Attributes["circuit-tripped"]);
+        }
+
+        [TestMethod]
+        public async Task Should_emit_telemetry_with_circuit_tripped_attribute_when_circuit_trips()
+        {
+            // given
+            var state = new CircuitBreakerState();
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                failureThreshold: 1,
+                filters: new AlwaysFailingFilter()));
+            var msg = new TestMessage { Service = si };
+
+            // when — single failure trips the circuit
+            await sut.Invoke(msg);
+
+            // then
+            var endEvent = adapter.Events
+                .First(e => e.Component == "OnCircuitBreak" && e.Phase == TelemetryPhase.End);
+
+            Assert.AreEqual(true, (bool)endEvent.Attributes["circuit-tripped"]);
+            Assert.AreEqual("Open", endEvent.Attributes["circuit-state"].ToString());
+            Assert.AreEqual(TelemetryOutcome.Exception, endEvent.Outcome);
+        }
+
+        [TestMethod]
+        public async Task Should_fast_fail_concurrent_requests_while_half_open_probe_is_in_progress()
+        {
+            // given — circuit is half-open (another request is already probing)
+            var state = new CircuitBreakerState
+            {
+                Status = CircuitState.HalfOpen,
+                FailureCount = 3
+            };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when — a second request arrives while probe is in progress
+            await sut.Invoke(msg);
+
+            // then — filter was NOT executed; circuit blocked it
+            Assert.AreEqual(0, msg.Number, "Request should have been blocked while another probe is in progress");
+            Assert.AreEqual(503, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_set_503_status_code_when_circuit_breaker_rejects_request()
+        {
+            // given — circuit is open
+            var state = new CircuitBreakerState
+            {
+                Status = CircuitState.Open,
+                LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5)
+            };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnCircuitBreak<TestMessage>(state,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — 503 Service Unavailable, not 500
+            Assert.AreEqual(503, msg.StatusCode);
+            Assert.IsTrue(msg.StatusMessage.Contains("circuit breaker"));
         }
     }
 }

@@ -149,4 +149,30 @@ namespace DataPipe.Tests.Support
             await _scope.Execute(msg);
         }
     }
+
+    class AlwaysFailingFilter : Filter<TestMessage>
+    {
+        public Task Execute(TestMessage msg)
+        {
+            throw new InvalidOperationException("Simulated external failure");
+        }
+    }
+
+    class FailNTimesThenSucceedFilter : Filter<TestMessage>
+    {
+        private int _callCount;
+        private readonly int _failCount;
+
+        public FailNTimesThenSucceedFilter(int failCount) => _failCount = failCount;
+
+        public Task Execute(TestMessage msg)
+        {
+            _callCount++;
+            if (_callCount <= _failCount)
+                throw new InvalidOperationException($"Failure {_callCount}");
+
+            msg.Number = _callCount;
+            return Task.CompletedTask;
+        }
+    }
 }
