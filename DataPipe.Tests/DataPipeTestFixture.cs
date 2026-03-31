@@ -7,6 +7,7 @@ using DataPipe.Core.Telemetry.Adapters;
 using DataPipe.Core.Telemetry.Policies;
 using DataPipe.Sql.Filters;
 using DataPipe.Tests.Support;
+using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -2011,6 +2012,198 @@ namespace DataPipe.Tests
             // then — STOPPED log was emitted, second filter did not execute
             Assert.AreEqual(0, msg.Number);
             Assert.IsTrue(logs.Any(l => l.Contains("STOPPED:")), "Expected a STOPPED log message");
+        }
+
+        // ── LoggingAspect mode tests ──────────────────────────────────────────────
+
+        [TestMethod]
+        public async Task Should_log_start_steps_end_in_Full_mode()
+        {
+            // given
+            var logger = new TestLogger();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new LoggingAspect<TestMessage>(logger, "FullTest", mode: PipeLineLogMode.Full));
+            sut.Add(new IncrementingNumberFilter());
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — START, at least one step log, and END are present
+            Assert.AreEqual(1, msg.Number);
+            Assert.IsTrue(logger.Entries.Any(e => e.Message.Contains("START: FullTest")), "Expected START log");
+            Assert.IsTrue(logger.Entries.Any(e => e.Message.Contains("END: FullTest")), "Expected END log");
+            // Full mode hooks OnLog, so step messages from the pipeline appear
+            Assert.IsTrue(logger.Entries.Count >= 3, $"Expected at least 3 log entries, got {logger.Entries.Count}");
+        }
+
+        [TestMethod]
+        public async Task Should_log_start_end_only_in_StartEndOnly_mode()
+        {
+            // given
+            var logger = new TestLogger();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new LoggingAspect<TestMessage>(logger, "StartEndTest", mode: PipeLineLogMode.StartEndOnly));
+            sut.Add(new IncrementingNumberFilter());
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — START and END present, no step-level messages
+            Assert.AreEqual(1, msg.Number);
+            var startEntries = logger.Entries.Where(e => e.Message.Contains("START: StartEndTest")).ToList();
+            var endEntries = logger.Entries.Where(e => e.Message.Contains("END: StartEndTest")).ToList();
+            Assert.AreEqual(1, startEntries.Count, "Expected exactly one START log");
+            Assert.AreEqual(1, endEntries.Count, "Expected exactly one END log");
+            // No step logs — only START and END
+            Assert.AreEqual(2, logger.Entries.Count, $"Expected exactly 2 log entries (START+END), got {logger.Entries.Count}");
+        }
+
+        [TestMethod]
+        public async Task Should_log_errors_only_in_ErrorsOnly_mode()
+        {
+            // given
+            var logger = new TestLogger();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new LoggingAspect<TestMessage>(logger, "ErrorsTest", mode: PipeLineLogMode.ErrorsOnly));
+            sut.Add(new IncrementingNumberFilter());
+            var msg = new TestMessage { Number = 0 };
+
+            // when — no exception path
+            await sut.Invoke(msg);
+
+            // then — no logs at all on the happy path
+            Assert.AreEqual(1, msg.Number);
+            Assert.AreEqual(0, logger.Entries.Count, $"Expected no log entries in ErrorsOnly mode on success, got {logger.Entries.Count}");
+        }
+
+        [TestMethod]
+        public async Task Should_log_error_in_ErrorsOnly_mode_on_exception()
+        {
+            // given
+            var logger = new TestLogger();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new LoggingAspect<TestMessage>(logger, "ErrorsOnlyEx", mode: PipeLineLogMode.ErrorsOnly));
+            sut.Add(new ErroringFilter());
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — only an error log entry
+            Assert.IsTrue(logger.Entries.Any(e => e.Level == LogLevel.Error), "Expected an Error-level log when exception occurs in ErrorsOnly mode");
+            Assert.IsFalse(logger.Entries.Any(e => e.Message.Contains("START:")), "No START log expected in ErrorsOnly mode");
+            Assert.IsFalse(logger.Entries.Any(e => e.Message.Contains("END:")), "No END log expected in ErrorsOnly mode");
+        }
+
+        // ── Dispose tests ─────────────────────────────────────────────────────────
+
+        [TestMethod]
+        public void Should_clear_delegates_and_state_on_Dispose()
+        {
+            // given
+            var msg = new TestMessage { Number = 42 };
+            msg.OnError = (m, ex) => { };
+            msg.OnStart = m => { };
+            msg.OnComplete = m => { };
+            msg.OnSuccess = m => { };
+            msg.OnLog = s => { };
+            msg.OnTelemetry = e => { };
+            msg.State.Set("key", "value");
+
+            // when
+            msg.Dispose();
+
+            // then — all lifecycle hooks cleared
+            Assert.IsNull(msg.OnError);
+            Assert.IsNull(msg.OnStart);
+            Assert.IsNull(msg.OnComplete);
+            Assert.IsNull(msg.OnSuccess);
+            Assert.IsNull(msg.OnLog);
+            Assert.IsNull(msg.OnTelemetry);
+        }
+
+        [TestMethod]
+        public void Should_be_idempotent_on_double_Dispose()
+        {
+            // given
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            msg.Dispose();
+            msg.Dispose(); // second call should not throw
+
+            // then — still cleared
+            Assert.IsNull(msg.OnError);
+            Assert.IsNull(msg.OnLog);
+        }
+
+        // ── Concurrency stress tests ──────────────────────────────────────────────
+
+        [TestMethod]
+        public async Task Should_handle_concurrent_pipeline_invocations()
+        {
+            // given — a shared pipeline, each invocation gets its own message
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new IncrementingNumberFilter());
+            sut.Add(new IncrementingNumberFilter());
+
+            const int concurrency = 50;
+            var messages = Enumerable.Range(0, concurrency)
+                .Select(_ => new TestMessage { Number = 0 })
+                .ToArray();
+
+            // when — run all concurrently
+            await Task.WhenAll(messages.Select(m => sut.Invoke(m)));
+
+            // then — every message should have been incremented twice
+            foreach (var msg in messages)
+            {
+                Assert.AreEqual(2, msg.Number, "Each message should pass through both filters");
+                Assert.IsTrue(msg.IsSuccess, "Each message should succeed");
+            }
+        }
+
+        [TestMethod]
+        public async Task Should_isolate_state_across_concurrent_invocations()
+        {
+            // given — a filter that writes a unique value to State and captures it before Dispose
+            var results = new System.Collections.Concurrent.ConcurrentDictionary<Guid, string>();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new LambdaFilter<TestMessage>(msg =>
+            {
+                msg.State.Set("id", msg.CorrelationId.ToString());
+                return Task.CompletedTask;
+            }));
+            sut.Add(new LambdaFilter<TestMessage>(msg =>
+            {
+                // capture on a second filter so the first has fully completed
+                results[msg.CorrelationId] = msg.State.Get<string>("id");
+                return Task.CompletedTask;
+            }));
+
+            const int concurrency = 50;
+            var messages = Enumerable.Range(0, concurrency)
+                .Select(_ => new TestMessage { Number = 0 })
+                .ToArray();
+
+            // when
+            await Task.WhenAll(messages.Select(m => sut.Invoke(m)));
+
+            // then — each message's captured State held its own CorrelationId
+            foreach (var msg in messages)
+            {
+                Assert.IsTrue(results.ContainsKey(msg.CorrelationId), "Result should be captured");
+                Assert.AreEqual(msg.CorrelationId.ToString(), results[msg.CorrelationId],
+                    "State should be isolated per message");
+            }
         }
     }
 }
