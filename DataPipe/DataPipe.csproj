@@ -18,6 +18,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DataPipe.Sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
 
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />

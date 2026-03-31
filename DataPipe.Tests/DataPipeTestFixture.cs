@@ -1887,5 +1887,130 @@ namespace DataPipe.Tests
                 leakInterval: TimeSpan.FromMilliseconds(100),
                 filters: new NoOpFilter());
         }
+
+        // ──────────────────────────────────────────────────────────────────
+        // FilterRunner refactoring coverage tests
+        // ──────────────────────────────────────────────────────────────────
+
+        [TestMethod]
+        public async Task Should_emit_structural_end_with_exception_outcome_when_IfTrue_filter_throws()
+        {
+            // given
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new IfTrue<TestMessage>(_ => true, new ErroringFilter()));
+            var msg = new TestMessage { Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — IfTrue structural End event should have Exception outcome
+            var ifTrueEnd = adapter.Events
+                .First(e => e.Component == "IfTrue" && e.Phase == TelemetryPhase.End);
+            Assert.AreEqual(TelemetryOutcome.Exception, ifTrueEnd.Outcome);
+        }
+
+        [TestMethod]
+        public async Task Should_stop_mid_collection_in_ForEach()
+        {
+            // given — 4 words, stop after first
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new ForEach<TestMessage, string>(
+                msg => msg.Words,
+                (msg, word) => msg.Instance = word,
+                new CancellingFilter()));  // stops on first item
+            var msg = new TestMessage { Words = new[] { "a", "b", "c", "d" }, Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — pipeline stopped, only one CancellingFilter telemetry event
+            Assert.IsTrue(msg.Execution.IsStopped);
+            var cancelEvents = adapter.Events
+                .Where(e => e.Component == "CancellingFilter" && e.Phase == TelemetryPhase.End)
+                .ToList();
+            Assert.AreEqual(1, cancelEvents.Count, "Should only execute filter for first item");
+        }
+
+        [TestMethod]
+        public async Task Should_emit_telemetry_for_single_filter_in_Policy()
+        {
+            // given
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new Policy<TestMessage>(_ => new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0, Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — telemetry for the selected filter plus structural events
+            Assert.AreEqual(1, msg.Number);
+            var policyStart = adapter.Events
+                .First(e => e.Component == "Policy" && e.Phase == TelemetryPhase.Start);
+            Assert.IsTrue(policyStart.Attributes.ContainsKey("decision"));
+            Assert.AreEqual("IncrementingNumberFilter", policyStart.Attributes["decision"]);
+
+            var filterEnd = adapter.Events
+                .First(e => e.Component == "IncrementingNumberFilter" && e.Phase == TelemetryPhase.End);
+            Assert.AreEqual(TelemetryOutcome.Success, filterEnd.Outcome);
+        }
+
+        [TestMethod]
+        public async Task Should_emit_structural_telemetry_for_Sequence()
+        {
+            // given
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new Sequence<TestMessage>(
+                new IncrementingNumberFilter(),
+                new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0, Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — both filters executed, Start and End events for each child
+            Assert.AreEqual(2, msg.Number);
+            // Sequence has EmitTelemetryEvent=true so parent emits for it;
+            // child filters should have their own Start/End events
+            var childStarts = adapter.Events
+                .Where(e => e.Component == "IncrementingNumberFilter" && e.Phase == TelemetryPhase.Start)
+                .ToList();
+            var childEnds = adapter.Events
+                .Where(e => e.Component == "IncrementingNumberFilter" && e.Phase == TelemetryPhase.End)
+                .ToList();
+            Assert.AreEqual(2, childStarts.Count);
+            Assert.AreEqual(2, childEnds.Count);
+            Assert.IsTrue(childEnds.All(e => e.Outcome == TelemetryOutcome.Success));
+        }
+
+        [TestMethod]
+        public async Task Should_emit_stopped_log_when_filter_stops_inside_structural()
+        {
+            // given
+            var logs = new List<string>();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new Sequence<TestMessage>(
+                new CancellingFilter(),
+                new IncrementingNumberFilter()));  // should not run
+            var msg = new TestMessage { Number = 0 };
+            msg.OnLog = log => logs.Add(log);
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — STOPPED log was emitted, second filter did not execute
+            Assert.AreEqual(0, msg.Number);
+            Assert.IsTrue(logs.Any(l => l.Contains("STOPPED:")), "Expected a STOPPED log message");
+        }
     }
 }

@@ -3,7 +3,6 @@ using DataPipe.Core.Contracts.Internal;
 using DataPipe.Core.Telemetry;
 using System;
 using System.Diagnostics;
-using System.Threading.Tasks;
 
 namespace DataPipe.Core.Filters
 {
@@ -165,92 +164,13 @@ namespace DataPipe.Core.Filters
 
             try
             {
-                var reason = string.Empty;
-                var fsw = Stopwatch.StartNew();
-                
-                // Check if this structural filter manages its own telemetry
-                var selfEmitting = filter is IAmStructural structural && !structural.EmitTelemetryEvent;
-                var emitStart = filter is not IAmStructural || (filter is IAmStructural s && s.EmitTelemetryEvent);
-
-                if (!msg.ShouldStop && emitStart)
-                {
-                    var @childStart = new TelemetryEvent
-                    {
-                        Actor = msg.Actor,
-                        Component = filter.GetType().Name.Split('`')[0],
-                        PipelineName = msg.PipelineName,
-                        Service = msg.Service,
-                        Scope = TelemetryScope.Filter,
-                        Role = filter is IAmStructural ? FilterRole.Structural : FilterRole.Business,
-                        Phase = TelemetryPhase.Start,
-                        MessageId = msg.CorrelationId,
-                        Timestamp = DateTimeOffset.UtcNow,
-                        Attributes = filter is IAmStructural ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
-                    };
-                    if (msg.ShouldEmitTelemetry(@childStart)) msg.OnTelemetry?.Invoke(@childStart);
-                }
-
-                if (!msg.ShouldStop)
-                {
-                    msg.OnLog?.Invoke($"INVOKING: {filter.GetType().Name.Split('`')[0]}");
-                }
-
-                var outcome = TelemetryOutcome.Success;
-                if (msg.ShouldStop)
-                {
-                    outcome = TelemetryOutcome.Stopped;
-                    reason = msg.Execution.Reason;
-                    return;
-                }
-
-                try
-                {
-                    await filter.Execute(msg);
-                }
-                catch (Exception ex)
-                {
-                    outcome = TelemetryOutcome.Exception;
-                    reason = ex.Message;
-                    structuralOutcome = TelemetryOutcome.Exception;
-                    structuralReason = ex.Message;
-                    throw;
-                }
-                finally
-                {
-                    fsw.Stop();
-                    
-                    // Skip End event for self-emitting structural filters (they emit their own)
-                    if (!selfEmitting)
-                    {
-                        var @complete = new TelemetryEvent
-                        {
-                            Actor = msg.Actor,
-                            Component = filter.GetType().Name.Split('`')[0],
-                            PipelineName = msg.PipelineName,
-                            Service = msg.Service,
-                            Scope = TelemetryScope.Filter,
-                            Role = filter is IAmStructural ? FilterRole.Structural : FilterRole.Business,
-                            Phase = TelemetryPhase.End,
-                            MessageId = msg.CorrelationId,
-                            Outcome = msg.ShouldStop ? TelemetryOutcome.Stopped : outcome,
-                            Reason = msg.ShouldStop ? msg.Execution.Reason : reason,
-                            Timestamp = DateTimeOffset.UtcNow,
-                            DurationMs = fsw.ElapsedMilliseconds,
-                            Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
-                        };
-                        msg.Execution.TelemetryAnnotations.Clear();
-                        if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
-                    }
-
-                    msg.OnLog?.Invoke($"COMPLETED:  {filter.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
-
-                    if (msg.ShouldStop && filter is not IAmStructural)
-                    {
-                        outcome = TelemetryOutcome.Stopped;
-                        reason = msg.Execution.Reason;
-                        msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
-                    }
-                }
+                await FilterRunner.ExecuteWithTelemetryAsync(filter, msg, msg.PipelineName);
+            }
+            catch (Exception ex)
+            {
+                structuralOutcome = TelemetryOutcome.Exception;
+                structuralReason = ex.Message;
+                throw;
             }
             finally
             {
@@ -270,6 +190,7 @@ namespace DataPipe.Core.Filters
                     Reason = structuralReason,
                     Timestamp = DateTimeOffset.UtcNow,
                     DurationMs = structuralSw.ElapsedMilliseconds,
+                    Attributes = new Dictionary<string, object> { ["decision"] = decision }
                 };
                 if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 
