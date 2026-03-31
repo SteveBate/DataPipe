@@ -126,6 +126,8 @@ Implement contracts on the context class to enable built-in structural filters:
 
 `OnCircuitBreak<T>` does not require a message contract. It uses an external `CircuitBreakerState` object to track circuit state, which is designed to be shared across pipeline invocations (e.g. as a DI singleton).
 
+`OnRateLimit<T>` does not require a message contract. It uses an external `RateLimiterState` object to track bucket state, which is designed to be shared across pipeline invocations (e.g. as a DI singleton).
+
 ### 4.2 Basic Context (No Strongly-Typed Result)
 
 For simple applications or pipelines where the result is carried directly on the message:
@@ -856,7 +858,50 @@ pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
 
 When the circuit is open (or half-open with a probe already in progress), `OnCircuitBreak` throws `CircuitBreakerOpenException`. The built-in `ExceptionAspect<T>` catches this and sets `StatusCode = 503` (Service Unavailable), distinguishing circuit breaker rejections from general server errors (500).
 
-### 6.6 RepeatUntil\<T\> — Conditional Loop
+### 6.6 OnRateLimit\<T\> — Rate Limiting (Leaky Bucket)
+
+Controls throughput to a downstream resource using the leaky bucket algorithm. Wraps child filters and enforces a maximum number of requests per time interval. When the bucket is full, behaviour depends on the configured mode:
+
+- **Delay** (default): waits until capacity is available (backpressure)
+- **Reject**: immediately fails with `RateLimitRejectedException` (caught by `ExceptionAspect` → 429)
+
+`RateLimiterState` is thread-safe and designed to be shared as a singleton across pipeline invocations so that all pipelines targeting the same resource share the same bucket:
+
+```csharp
+// DI registration (shared across all pipelines hitting the same resource)
+services.AddSingleton(new RateLimiterState());
+```
+
+```csharp
+// Throttle database inserts to 200/second with backpressure
+pipeline.Add(new OnRateLimit<ImportMessage>(dbThrottle,
+    capacity: 200,
+    leakInterval: TimeSpan.FromMilliseconds(5),
+    filters: new InsertRecord()));
+
+// Hard reject at 50 requests/second
+pipeline.Add(new OnRateLimit<ApiMessage>(apiThrottle,
+    capacity: 50,
+    leakInterval: TimeSpan.FromMilliseconds(20),
+    behavior: RateLimitExceededBehavior.Reject,
+    filters: new CallExternalApi()));
+
+// Combined with circuit breaker and retry
+pipeline.Add(new OnRateLimit<OrderMessage>(shopifyThrottle,
+    capacity: 40,
+    leakInterval: TimeSpan.FromMilliseconds(500),
+    filters: new OnCircuitBreak<OrderMessage>(circuitState,
+        new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
+            new CallShopifyApi()))));
+```
+
+**How the leaky bucket works:** Each request adds a token (timestamp) to the bucket. Tokens older than the `leakInterval` drain automatically. When the bucket reaches `capacity`, no more requests are admitted until a token drains. The effective throughput limit is `capacity / leakInterval`. For example, `capacity: 10` with `leakInterval: TimeSpan.FromMilliseconds(100)` allows ~100 requests/second with a burst tolerance up to 10.
+
+**Constructor validation:** `capacity` must be ≥ 1. `leakInterval` must be greater than `TimeSpan.Zero`. `state` must not be null. Invalid values throw `ArgumentOutOfRangeException` or `ArgumentNullException`.
+
+**Key:** When one pipeline fills the bucket, all pipelines sharing the same `RateLimiterState` are throttled. Place rate limiting _outside_ circuit breaker and retry so that the entire resilience stack operates within the rate limit.
+
+### 6.7 RepeatUntil\<T\> — Conditional Loop
 
 Loops child filters until the predicate returns `true`:
 
@@ -869,7 +914,7 @@ pipeline.Add(new RepeatUntil<BatchMessage>(
 ));
 ```
 
-### 6.7 Repeat\<T\> — Unconditional Loop
+### 6.8 Repeat\<T\> — Unconditional Loop
 
 Loops indefinitely. Use `msg.Execution.Stop()` inside a filter to break:
 
@@ -885,7 +930,7 @@ pipeline.Add(new Repeat<QueueMessage>(
 
 `Execution.Reset()` clears the stopped state between loop iterations so `Stop()` can be used for loop control without permanently halting the pipeline.
 
-### 6.8 ForEach\<TMessage, TItem\> — Iterate Over Collection
+### 6.9 ForEach\<TMessage, TItem\> — Iterate Over Collection
 
 Iterates over an enumerable, executing child filters for each item:
 
@@ -898,7 +943,7 @@ pipeline.Add(new ForEach<OrderMessage, OrderLine>(
 ));
 ```
 
-### 6.9 OpenSqlConnection\<T\> — Scoped SQL Connection
+### 6.10 OpenSqlConnection\<T\> — Scoped SQL Connection
 
 Requires `IUseSqlCommand` on the message. Opens a SQL connection for child filters:
 
@@ -925,7 +970,7 @@ public async Task Execute(LoadUserMessage msg)
 }
 ```
 
-### 6.10 StartTransaction\<T\> — SQL Transaction
+### 6.11 StartTransaction\<T\> — SQL Transaction
 
 Requires `IAmCommittable` + `IUseSqlCommand` on the message. Wraps child filters in a SQL transaction. Commits if `msg.Commit` is true and no errors; rolls back otherwise:
 
@@ -951,7 +996,7 @@ pipeline.Add(new StartTransaction<OrderMessage>(IsolationLevel.Serializable,
 - An exception is thrown
 - `msg.Execution.Stop()` was called
 
-### 6.11 Standard Nesting Convention
+### 6.12 Standard Nesting Convention
 
 The production-proven nesting pattern for data mutation pipelines:
 
@@ -1008,6 +1053,7 @@ pipeline.Use(new ExceptionAspect<OrderMessage>());
 | Exception | StatusCode | Meaning |
 |-----------|------------|----------|
 | `CircuitBreakerOpenException` | 503 | Service Unavailable — circuit breaker rejected the request |
+| `RateLimitRejectedException` | 429 | Too Many Requests — rate limiter rejected the request |
 | All other exceptions | 500 | Internal Server Error |
 
 ### 7.2 BasicConsoleLoggingAspect\<T\>
@@ -2220,6 +2266,7 @@ Pipeline.Invoke(msg)
 | `Sequence<T>(filters...)` | `BaseMessage` | Group filters as one logical step |
 | `OnTimeoutRetry<T>(max, filters...)` | `IAmRetryable` | Retry on timeout |
 | `OnCircuitBreak<T>(state, threshold?, duration?, filters...)` | `BaseMessage` | Circuit breaker pattern |
+| `OnRateLimit<T>(state, capacity, leakInterval, behavior?, filters...)` | `BaseMessage` | Rate limiting (leaky bucket) |
 | `RepeatUntil<T>(predicate, filters...)` | `BaseMessage` | Loop until predicate true |
 | `Repeat<T>(filters...)` | `BaseMessage` | Infinite loop (break via Stop) |
 | `ForEach<TMsg, TItem>(selector, setter, filters...)` | `BaseMessage` | Iterate collection |
@@ -2236,7 +2283,7 @@ Pipeline.Invoke(msg)
 
 | Aspect | Purpose |
 |--------|---------|
-| `ExceptionAspect<T>` | Exception handling (500 general, 503 circuit breaker) |
+| `ExceptionAspect<T>` | Exception handling (500 general, 503 circuit breaker, 429 rate limit) |
 | `BasicConsoleLoggingAspect<T>(title?)` | Console logging |
 | `LoggingAspect<T>(logger, title?, env?, level?, mode?)` | Structured ILogger logging |
 | `TelemetryAspect<T>(adapter)` | Telemetry forwarding |
@@ -2255,6 +2302,9 @@ Pipeline.Invoke(msg)
 |-------|---------|--------|
 | `CircuitBreakerState` | DataPipe.Core | Shared circuit state for `OnCircuitBreak<T>` (register as DI singleton) |
 | `CircuitBreakerOpenException` | DataPipe.Core | Thrown when circuit is open; caught by `ExceptionAspect` → 503 |
+| `RateLimiterState` | DataPipe.Core | Shared bucket state for `OnRateLimit<T>` (register as DI singleton) |
+| `RateLimitRejectedException` | DataPipe.Core | Thrown when rate limit exceeded in Reject mode; caught by `ExceptionAspect` → 429 |
+| `RateLimitExceededBehavior` | DataPipe.Core | Enum: `Delay` (backpressure) or `Reject` (fail fast with 429) |
 
 ### Telemetry Adapters
 

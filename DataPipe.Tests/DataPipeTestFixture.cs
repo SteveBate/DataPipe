@@ -10,8 +10,10 @@ using DataPipe.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DataPipe.Tests
@@ -1471,6 +1473,419 @@ namespace DataPipe.Tests
             // then — 503 Service Unavailable, not 500
             Assert.AreEqual(503, msg.StatusCode);
             Assert.IsTrue(msg.StatusMessage.Contains("circuit breaker"));
+        }
+
+        // ── OnRateLimit ─────────────────────────────────────────────────
+
+        [TestMethod]
+        public async Task Should_execute_wrapped_filters_when_bucket_has_capacity()
+        {
+            // given
+            var state = new RateLimiterState();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 10,
+                leakInterval: TimeSpan.FromMilliseconds(100),
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(1, msg.Number);
+            Assert.IsTrue(msg.IsSuccess);
+        }
+
+        [TestMethod]
+        public async Task Should_reject_when_bucket_is_full_and_behavior_is_reject()
+        {
+            // given — pre-fill the bucket to capacity
+            var state = new RateLimiterState();
+            var capacity = 3;
+            lock (state.Lock)
+            {
+                for (int i = 0; i < capacity; i++)
+                {
+                    state.Tokens.Enqueue(DateTimeOffset.UtcNow);
+                }
+            }
+
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: capacity,
+                leakInterval: TimeSpan.FromMinutes(5), // won't drain during this test
+                behavior: RateLimitExceededBehavior.Reject,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — filter was NOT executed; rate limiter blocked it
+            Assert.AreEqual(0, msg.Number);
+            Assert.AreEqual(429, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_set_429_status_code_when_rate_limiter_rejects_request()
+        {
+            // given — bucket full, reject mode
+            var state = new RateLimiterState();
+            lock (state.Lock)
+            {
+                state.Tokens.Enqueue(DateTimeOffset.UtcNow);
+            }
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 1,
+                leakInterval: TimeSpan.FromMinutes(5),
+                behavior: RateLimitExceededBehavior.Reject,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — 429 Too Many Requests, not 500
+            Assert.AreEqual(429, msg.StatusCode);
+            Assert.IsTrue(msg.StatusMessage.Contains("rate limiter"));
+        }
+
+        [TestMethod]
+        public async Task Should_delay_until_capacity_is_available_when_behavior_is_delay()
+        {
+            // given — fill the bucket, but use a short leak interval so it drains quickly
+            var state = new RateLimiterState();
+            var capacity = 2;
+            var leakInterval = TimeSpan.FromMilliseconds(50);
+            lock (state.Lock)
+            {
+                for (int i = 0; i < capacity; i++)
+                {
+                    state.Tokens.Enqueue(DateTimeOffset.UtcNow);
+                }
+            }
+
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: capacity,
+                leakInterval: leakInterval,
+                behavior: RateLimitExceededBehavior.Delay,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+            var sw = Stopwatch.StartNew();
+
+            // when — should wait for at least one token to drain
+            await sut.Invoke(msg);
+            sw.Stop();
+
+            // then — filter DID execute (after waiting)
+            Assert.AreEqual(1, msg.Number);
+            Assert.IsTrue(msg.IsSuccess);
+            // Must have waited at least the leak interval for one token to drain
+            Assert.IsTrue(sw.ElapsedMilliseconds >= 40, $"Expected wait of at least ~50ms, actual: {sw.ElapsedMilliseconds}ms");
+        }
+
+        [TestMethod]
+        public async Task Should_drain_expired_tokens_and_allow_new_requests()
+        {
+            // given — fill bucket with tokens that are already expired
+            var state = new RateLimiterState();
+            var leakInterval = TimeSpan.FromMilliseconds(50);
+            lock (state.Lock)
+            {
+                // Add tokens that are old enough to have expired
+                for (int i = 0; i < 5; i++)
+                {
+                    state.Tokens.Enqueue(DateTimeOffset.UtcNow.AddMilliseconds(-100));
+                }
+            }
+
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 5,
+                leakInterval: leakInterval,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+
+            // when — expired tokens should drain, making room
+            await sut.Invoke(msg);
+
+            // then — succeeded without delay
+            Assert.AreEqual(1, msg.Number);
+            Assert.IsTrue(msg.IsSuccess);
+        }
+
+        [TestMethod]
+        public async Task Should_allow_multiple_requests_within_capacity()
+        {
+            // given
+            var state = new RateLimiterState();
+            var capacity = 10;
+
+            // when — invoke 10 times within capacity
+            for (int i = 0; i < capacity; i++)
+            {
+                var sut = new DataPipe<TestMessage>();
+                sut.Use(new ExceptionAspect<TestMessage>());
+                sut.Add(new OnRateLimit<TestMessage>(state,
+                    capacity: capacity,
+                    leakInterval: TimeSpan.FromMinutes(5), // won't drain
+                    filters: new IncrementingNumberFilter()));
+                var msg = new TestMessage { Number = i };
+                await sut.Invoke(msg);
+
+                // then — each should succeed
+                Assert.AreEqual(i + 1, msg.Number, $"Request {i} should have succeeded");
+                Assert.IsTrue(msg.IsSuccess);
+            }
+
+            // then — bucket is now full
+            Assert.AreEqual(capacity, state.CurrentQueueDepth);
+        }
+
+        [TestMethod]
+        public async Task Should_reject_request_after_capacity_exhausted_in_reject_mode()
+        {
+            // given — fill bucket to capacity via actual invocations
+            var state = new RateLimiterState();
+            var capacity = 3;
+
+            for (int i = 0; i < capacity; i++)
+            {
+                var pipe = new DataPipe<TestMessage>();
+                pipe.Use(new ExceptionAspect<TestMessage>());
+                pipe.Add(new OnRateLimit<TestMessage>(state,
+                    capacity: capacity,
+                    leakInterval: TimeSpan.FromMinutes(5),
+                    behavior: RateLimitExceededBehavior.Reject,
+                    filters: new NoOpFilter()));
+                await pipe.Invoke(new TestMessage());
+            }
+
+            // when — one more request should be rejected
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: capacity,
+                leakInterval: TimeSpan.FromMinutes(5),
+                behavior: RateLimitExceededBehavior.Reject,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(0, msg.Number, "Filter should not have executed");
+            Assert.AreEqual(429, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_share_rate_limiter_state_across_pipeline_invocations()
+        {
+            // given — shared state simulating a DI singleton
+            var sharedState = new RateLimiterState();
+            var capacity = 2;
+
+            // Fill from pipeline1
+            var pipeline1 = new DataPipe<TestMessage>();
+            pipeline1.Use(new ExceptionAspect<TestMessage>());
+            pipeline1.Add(new OnRateLimit<TestMessage>(sharedState,
+                capacity: capacity,
+                leakInterval: TimeSpan.FromMinutes(5),
+                behavior: RateLimitExceededBehavior.Reject,
+                filters: new NoOpFilter()));
+
+            for (int i = 0; i < capacity; i++)
+            {
+                await pipeline1.Invoke(new TestMessage());
+            }
+
+            // when — pipeline2 uses the same state, should be blocked
+            var pipeline2 = new DataPipe<TestMessage>();
+            pipeline2.Use(new ExceptionAspect<TestMessage>());
+            pipeline2.Add(new OnRateLimit<TestMessage>(sharedState,
+                capacity: capacity,
+                leakInterval: TimeSpan.FromMinutes(5),
+                behavior: RateLimitExceededBehavior.Reject,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0 };
+            await pipeline2.Invoke(msg);
+
+            // then — pipeline2 was blocked by shared bucket
+            Assert.AreEqual(0, msg.Number, "Pipeline2 should have been blocked by the shared full bucket");
+            Assert.AreEqual(429, msg.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Should_emit_rate_limiter_telemetry_events_with_attributes()
+        {
+            // given
+            var state = new RateLimiterState();
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 10,
+                leakInterval: TimeSpan.FromMilliseconds(100),
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0, Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — should have rate limiter start and end events with attributes
+            var rlEvents = adapter.Events
+                .Where(e => e.Component == "OnRateLimit" && e.Scope == TelemetryScope.Filter)
+                .ToList();
+
+            Assert.IsTrue(rlEvents.Count >= 2, "Expected at least start and end events for OnRateLimit");
+
+            var startEvent = rlEvents.First(e => e.Phase == TelemetryPhase.Start);
+            Assert.AreEqual(10, (int)startEvent.Attributes["capacity"]);
+            Assert.AreEqual(100.0, (double)startEvent.Attributes["leak-interval-ms"]);
+            Assert.AreEqual("Delay", startEvent.Attributes["behavior"].ToString());
+
+            var endEvent = rlEvents.First(e => e.Phase == TelemetryPhase.End);
+            Assert.AreEqual(10, (int)endEvent.Attributes["capacity"]);
+            Assert.AreEqual(false, (bool)endEvent.Attributes["rejected"]);
+            Assert.AreEqual(TelemetryOutcome.Success, endEvent.Outcome);
+        }
+
+        [TestMethod]
+        public async Task Should_emit_telemetry_with_rejected_attribute_when_rate_limit_rejects()
+        {
+            // given — bucket full, reject mode
+            var state = new RateLimiterState();
+            lock (state.Lock)
+            {
+                state.Tokens.Enqueue(DateTimeOffset.UtcNow);
+            }
+            var adapter = new TestTelemetryAdapter();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(adapter));
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 1,
+                leakInterval: TimeSpan.FromMinutes(5),
+                behavior: RateLimitExceededBehavior.Reject,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            var endEvent = adapter.Events
+                .First(e => e.Component == "OnRateLimit" && e.Phase == TelemetryPhase.End);
+
+            Assert.AreEqual(true, (bool)endEvent.Attributes["rejected"]);
+            Assert.AreEqual(TelemetryOutcome.Exception, endEvent.Outcome);
+        }
+
+        [TestMethod]
+        public async Task Should_respect_cancellation_token_while_waiting_in_delay_mode()
+        {
+            // given — full bucket with long leak interval
+            var state = new RateLimiterState();
+            lock (state.Lock)
+            {
+                state.Tokens.Enqueue(DateTimeOffset.UtcNow);
+            }
+            var cts = new CancellationTokenSource();
+            var sut = new DataPipe<TestMessage>();
+            // No ExceptionAspect — we want the cancellation to propagate
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 1,
+                leakInterval: TimeSpan.FromMinutes(5), // won't drain naturally
+                behavior: RateLimitExceededBehavior.Delay,
+                filters: new IncrementingNumberFilter()));
+            var msg = new TestMessage { Number = 0, CancellationToken = cts.Token };
+
+            // when — cancel after a short delay
+            cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+            // then — should throw TaskCanceledException from the Task.Delay
+            await Assert.ThrowsExceptionAsync<TaskCanceledException>(async () => await sut.Invoke(msg));
+            Assert.AreEqual(0, msg.Number, "Filter should not have executed");
+        }
+
+        [TestMethod]
+        public async Task Should_handle_stopped_pipeline_within_rate_limited_filters()
+        {
+            // given
+            var state = new RateLimiterState();
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new OnRateLimit<TestMessage>(state,
+                capacity: 10,
+                leakInterval: TimeSpan.FromMilliseconds(100),
+                filters: new CancellingFilter()));
+            sut.Add(new IncrementingNumberFilter()); // should not execute
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — pipeline was stopped inside the rate-limited scope
+            Assert.IsTrue(msg.Execution.IsStopped);
+            Assert.AreEqual(0, msg.Number, "Subsequent filter should not have executed after stop");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentOutOfRangeException))]
+        public void Should_throw_when_rate_limiter_capacity_is_zero()
+        {
+            new OnRateLimit<TestMessage>(new RateLimiterState(),
+                capacity: 0,
+                leakInterval: TimeSpan.FromMilliseconds(100),
+                filters: new NoOpFilter());
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentOutOfRangeException))]
+        public void Should_throw_when_rate_limiter_capacity_is_negative()
+        {
+            new OnRateLimit<TestMessage>(new RateLimiterState(),
+                capacity: -1,
+                leakInterval: TimeSpan.FromMilliseconds(100),
+                filters: new NoOpFilter());
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentOutOfRangeException))]
+        public void Should_throw_when_rate_limiter_leak_interval_is_zero()
+        {
+            new OnRateLimit<TestMessage>(new RateLimiterState(),
+                capacity: 10,
+                leakInterval: TimeSpan.Zero,
+                filters: new NoOpFilter());
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentOutOfRangeException))]
+        public void Should_throw_when_rate_limiter_leak_interval_is_negative()
+        {
+            new OnRateLimit<TestMessage>(new RateLimiterState(),
+                capacity: 10,
+                leakInterval: TimeSpan.FromMilliseconds(-1),
+                filters: new NoOpFilter());
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentNullException))]
+        public void Should_throw_when_rate_limiter_state_is_null()
+        {
+            new OnRateLimit<TestMessage>(null!,
+                capacity: 10,
+                leakInterval: TimeSpan.FromMilliseconds(100),
+                filters: new NoOpFilter());
         }
     }
 }
