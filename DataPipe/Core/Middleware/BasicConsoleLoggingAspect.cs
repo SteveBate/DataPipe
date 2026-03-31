@@ -32,7 +32,7 @@ namespace DataPipe.Core.Middleware
             msg.OnLog?.Invoke($"START: {this.title ?? msg.GetType().Name}");
             try
             {
-                await Next.Execute(msg);
+                await Next.Execute(msg).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

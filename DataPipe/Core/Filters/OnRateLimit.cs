@@ -83,7 +83,7 @@ namespace DataPipe.Core.Filters
 
             // 1. Acquire a slot in the bucket (drain expired tokens, check capacity)
             var waitSw = Stopwatch.StartNew();
-            bool admitted = await TryAcquireAsync(msg);
+            bool admitted = await TryAcquireAsync(msg).ConfigureAwait(false);
             waitSw.Stop();
             waitTimeMs = waitSw.ElapsedMilliseconds;
 
@@ -105,7 +105,7 @@ namespace DataPipe.Core.Filters
                 { "leak-interval-ms", _leakInterval.TotalMilliseconds },
                 { "behavior", _behavior.ToString() }
             };
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             var @rlStart = new TelemetryEvent
             {
@@ -137,7 +137,7 @@ namespace DataPipe.Core.Filters
                 }
 
                 // 4. Execute the wrapped filters
-                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -181,7 +181,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@rlEnd)) msg.OnTelemetry?.Invoke(@rlEnd);
 
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
 
@@ -225,7 +225,7 @@ namespace DataPipe.Core.Filters
                 if (waitTime.HasValue)
                 {
                     msg.OnLog?.Invoke($"Rate limit: bucket full ({_capacity}). Waiting {waitTime.Value.TotalMilliseconds:F0}ms...");
-                    await Task.Delay(waitTime.Value, msg.CancellationToken);
+                    await Task.Delay(waitTime.Value, msg.CancellationToken).ConfigureAwait(false);
                 }
             }
         }

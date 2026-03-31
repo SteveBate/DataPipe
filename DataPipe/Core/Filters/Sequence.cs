@@ -15,7 +15,7 @@ namespace DataPipe.Core.Filters
 
         public async Task Execute(T msg)
         {
-            await FilterRunner.ExecuteFiltersAsync(filters, msg, msg.PipelineName);
+            await FilterRunner.ExecuteFiltersAsync(filters, msg, msg.PipelineName).ConfigureAwait(false);
         }
     }
 }

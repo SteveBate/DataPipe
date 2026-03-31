@@ -17,7 +17,7 @@ namespace DataPipe.Core.Middleware
         {
             try
             {
-                await Next.Execute(msg);
+                await Next.Execute(msg).ConfigureAwait(false);
             }
             catch (CircuitBreakerOpenException ex)
             {

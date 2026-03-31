@@ -80,7 +80,7 @@ namespace DataPipe.Core.Middleware
                     return;
                 }
 
-                await Next.Execute(msg);
+                await Next.Execute(msg).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

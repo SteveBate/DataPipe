@@ -51,7 +51,7 @@ namespace DataPipe.Core.Filters
 
             // Build start attributes including any annotations from parent
             var startAttributes = new Dictionary<string, object>(msg.Execution.TelemetryAnnotations);
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             try
             {
@@ -164,7 +164,7 @@ namespace DataPipe.Core.Filters
 
             try
             {
-                await FilterRunner.ExecuteWithTelemetryAsync(filter, msg, msg.PipelineName);
+                await FilterRunner.ExecuteWithTelemetryAsync(filter, msg, msg.PipelineName).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -194,7 +194,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
     }

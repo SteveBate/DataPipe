@@ -110,7 +110,7 @@ namespace DataPipe.Core.Filters
                 { "failure-threshold", _failureThreshold },
                 { "break-duration-seconds", _breakDuration.TotalSeconds }
             };
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             var @cbStart = new TelemetryEvent
             {
@@ -137,7 +137,7 @@ namespace DataPipe.Core.Filters
                 }
 
                 // 4. Execute the wrapped filters
-                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
 
                 // 5. Success — reset the circuit (only if filters actually executed)
                 if (!msg.ShouldStop)
@@ -215,7 +215,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@cbEnd)) msg.OnTelemetry?.Invoke(@cbEnd);
 
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
     }

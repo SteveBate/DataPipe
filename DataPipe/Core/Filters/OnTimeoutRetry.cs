@@ -112,7 +112,7 @@ namespace DataPipe.Core.Filters
             };
             
             // Clear annotations after consuming them for Start event
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             // Emit start event with max-attempts attribute
             var @retryStart = new TelemetryEvent
@@ -138,7 +138,7 @@ namespace DataPipe.Core.Filters
                     try
                     {
                         // Run each filter sequentially
-                        await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                        await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
 
                         // Exit loop on successful execution
                         break;
@@ -146,7 +146,7 @@ namespace DataPipe.Core.Filters
                     catch (Exception ex) when (_retryWhen(ex, msg))
                     {
                         // Handle retries asynchronously
-                        if (!await TryAgainAsync(msg, ex))
+                        if (!await TryAgainAsync(msg, ex).ConfigureAwait(false))
                         {
                             structuralOutcome = TelemetryOutcome.Exception;
                             structuralReason = ex.Message;
@@ -198,7 +198,7 @@ namespace DataPipe.Core.Filters
                 if (msg.ShouldEmitTelemetry(@retryEnd)) msg.OnTelemetry?.Invoke(@retryEnd);
                 
                 // Clear any remaining annotations to prevent leaking
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
 
@@ -226,7 +226,7 @@ namespace DataPipe.Core.Filters
                 msg.Attempt++;
 
                 // Wait asynchronously according to the delay strategy
-                await Task.Delay(_defaultDelay(msg.Attempt, msg));
+                await Task.Delay(_defaultDelay(msg.Attempt, msg)).ConfigureAwait(false);
 
                 return true;
             }

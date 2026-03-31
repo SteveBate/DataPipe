@@ -66,7 +66,7 @@ namespace DataPipe.Sql.Filters
                 };
                 
                 // Clear annotations after consuming them for Start event
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
 
                 var @txnStart = new TelemetryEvent
                 {
@@ -85,7 +85,7 @@ namespace DataPipe.Sql.Filters
 
                 try
                 {
-                    await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                    await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
 
                     if (msg.Commit)
                     {
@@ -146,7 +146,7 @@ namespace DataPipe.Sql.Filters
                     if (msg.ShouldEmitTelemetry(@txnEnd)) msg.OnTelemetry?.Invoke(@txnEnd);
                     
                     // Clear any remaining annotations to prevent leaking
-                    msg.Execution.TelemetryAnnotations.Clear();
+                    msg.Execution.ClearTelemetryAnnotations();
                 }
             }
         }

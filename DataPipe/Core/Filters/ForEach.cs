@@ -80,7 +80,7 @@ namespace DataPipe.Core.Filters
                 _itemSetter(msg, item);
 
                 // Execute all filters in sequence for this item
-                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
             }
         }
     }

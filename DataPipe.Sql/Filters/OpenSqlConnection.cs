@@ -48,7 +48,7 @@ namespace DataPipe.Sql.Filters
             string databaseName = string.Empty;
 
             using var cnn = new SqlConnection(connectionString);
-            await cnn.OpenAsync(msg.CancellationToken);
+            await cnn.OpenAsync(msg.CancellationToken).ConfigureAwait(false);
             databaseName = cnn.Database;
 
             if (msg.Command != null)
@@ -63,7 +63,7 @@ namespace DataPipe.Sql.Filters
             };
             
             // Clear annotations after consuming them for Start event
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             var @cnnStart = new TelemetryEvent
             {
@@ -84,7 +84,7 @@ namespace DataPipe.Sql.Filters
             {
                 using (msg.Command = cnn.CreateCommand())
                 {
-                    await FilterRunner.ExecuteFiltersAsync(filters, msg, msg.PipelineName);
+                    await FilterRunner.ExecuteFiltersAsync(filters, msg, msg.PipelineName).ConfigureAwait(false);
                 }
                 
                 msg.Command = null!;
@@ -117,7 +117,7 @@ namespace DataPipe.Sql.Filters
                 if (msg.ShouldEmitTelemetry(@cnnEnd)) msg.OnTelemetry?.Invoke(@cnnEnd);
                 
                 // Clear any remaining annotations to prevent leaking
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
     }

@@ -36,7 +36,7 @@ namespace DataPipe.Core.Filters
             {
                 ["condition"] = result
             };
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             var @start = new TelemetryEvent
             {
@@ -57,7 +57,7 @@ namespace DataPipe.Core.Filters
             {
                 if (result)
                 {
-                    await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                    await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -87,7 +87,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
     }

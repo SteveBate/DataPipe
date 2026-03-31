@@ -43,7 +43,7 @@ namespace DataPipe.Core.Filters
         {
             do
             {
-                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
             } while (!msg.Execution.IsStopped);
 
             msg.Execution.Reset(); // for any filters that come after

@@ -56,7 +56,7 @@ namespace DataPipe.Core.Filters
 
             // Build start attributes including any annotations from parent
             var startAttributes = new Dictionary<string, object>(msg.Execution.TelemetryAnnotations);
-            msg.Execution.TelemetryAnnotations.Clear();
+            msg.Execution.ClearTelemetryAnnotations();
 
             var @start = new TelemetryEvent
             {
@@ -82,7 +82,7 @@ namespace DataPipe.Core.Filters
                 {
                     do
                     {
-                        await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
+                        await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName).ConfigureAwait(false);
                         
                         // Check condition after each iteration
                         conditionMet = _callback(msg);
@@ -120,7 +120,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
             }
         }
     }
