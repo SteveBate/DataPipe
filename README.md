@@ -1,175 +1,465 @@
 # DataPipe
 
-DataPipe is a **lightweight, composable message pipeline framework for .NET**.  
-It lets you express application use-cases as explicit, composable pipelines built from small filters and aspects, keeping behavior readable and intentional.  
-Designed for real production systems, DataPipe has been refined over more than a decade of use.
+DataPipe is a lightweight, composable message pipeline framework for .NET.
 
-## Why DataPipe?
+It is designed for teams building enterprise systems with vertical slices, where each use-case is explicit, testable, and easy to evolve over time.
 
-Many frameworks rely on hidden middleware, global handlers, or opaque execution paths that make behavior hard to reason about. DataPipe takes the opposite approach:
+Instead of spreading behavior across controllers, handlers, decorators, middleware, and hidden framework hooks, DataPipe keeps a feature in one readable flow:
 
-- **Explicit control flow** - execution order is visible and intentional  
-- **Composability** - build complex workflows from small, focused filters  
-- **Clear cross-cutting behavior** - logging, retries, telemetry and policies are applied explicitly via aspects  
-- **No hidden middleware, no surprises**
+- Message
+- Ordered filters
+- Optional aspects for cross-cutting behavior
 
-Unlike many recent frameworks, DataPipe did *not* spring from a marketing cycle or a buzzword trend. I have been experimenting with the core ideas behind it - explicit message handling and composable execution - in real systems since at least **2013**, long before today’s discussions about AI or cloud observability. My original article exploring **messaging as a programming model** is still there to read:
+No hidden middleware. No global magic. No surprises.
+
+---
+
+## Why DataPipe
+
+DataPipe is a practical alternative to heavy layered "clean architecture" implementations when your real goal is maintainable business behavior.
+
+With DataPipe + vertical slices:
+
+- Each feature owns its own pipeline
+- Control flow is explicit in code order
+- Cross-cutting concerns are opt-in and local
+- Changes happen by composition, not by framework gymnastics
+
+The result is code that is self-documenting:
+
+- You can read the pipeline top-to-bottom and understand the use-case
+- You can see where validation, permission checks, retries, and transactions happen
+- You can reason about behavior without hunting through global registrations
+
+Unlike many recent frameworks, DataPipe did *not* spring from a marketing cycle or a buzzword trend. I have been experimenting with the core ideas behind it - explicit message handling and composable execution in real systems since at least **2013**, long before today’s discussions about AI or cloud observability. My original blog exploring **messaging as a programming model** is still there to read:
 
 > *Messaging as a Programming Model (2013)*  
 > https://stevebate.wordpress.com/2013/08/12/messaging-as-a-programming-model-part-1/
 
-That implementation was simple and in truth, a bit naive - but the principles it embodied are recognizable in DataPipe today. What’s changed in the last decade is not the *ideas*, but the *experience*, refinement, and operational knowledge encoded into the design. DataPipe has been used in production systems for more than 10 years, and has evolved to meet the needs of real teams building real applications.
+That implementation was simple and in truth, a bit naive - but the principles it embodied are recognizable in DataPipe today. What’s changed in the last decade is not the *ideas*, but the *experience*, refinement, and operational knowledge encoded into the design. DataPipe has been used in production systems in one form or another for more than 13 years, and has evolved to meet the needs of real teams building real applications.
 
 ---
 
-## Vertical Slice Architecture
+## SOLID-Friendly by Construction
 
-DataPipe aligns naturally with **vertical slice architecture**, where:
-- Each feature owns its own pipeline
-- Behavior is local and explicit
-- Observability and cross-cutting concerns are composed by choice, not by accident
+DataPipe naturally supports SOLID principles in day-to-day enterprise work:
 
-This makes DataPipe a great choice for teams that value clarity, testability, and operational transparency.
+- Single Responsibility: each filter does one thing well
+- Open/Closed: extend behavior by adding/reordering filters, not rewriting existing ones
+- Liskov Substitution: filters share a consistent contract and are swappable
+- Interface Segregation: messages opt into small contracts only when needed (`IUseSqlCommand`, `IAmCommittable`, `IAmRetryable`)
+- Dependency Inversion: business flows depend on abstractions (`Filter<T>`, aspects, adapters), not monolithic frameworks
 
-### Example: Authorize a user
+---
 
-There are a few things going on in the example below, but they’re all explicit, intentional and highlight important DataPipe concepts:
+## Enterprise Resilience Without Heavy Dependencies
 
-- The `SuppressAllExceptErrorsPolicy` policy ensures we only capture errors in production for this pipeline
-- `SqlServerTelemetryAdapter` sends telemetry to SQL Server. This is a custom adapter that implements `ITelemetryAdapter` (see Docs/Patterns/Telemetry/Adapters for more)
-- The pipeline is named "Authorize" (for logging) and is configured to capture pipeline start/stop events and errors
-- An `ExceptionAspect` captures any unhandled exceptions to ensure the pipeline fails gracefully
-- A `LoggingAspect` logs every step of the pipeline to a configured sink (console, file, etc) with environment context and can be used with any library that supports `ILogger`
-- The `TelemetryAspect` is conditionally applied only in non-development environments and forwards events to the adapter, which in this case is SQL Server, and is governed by the policy defined earlier i.e only errors are captured
-- `OnTimeoutRetry` is a structural filter that scopes retries to the inner filters only 
-- `OpenSqlConnection` is another structural filter that opens a SQL connection to a database ensuring the connection is available for the inner filters then automatically disposes it afterwards
-- `GetUserClaims` is a business logic filter that retrieves user claims from the database by way of a `SqlCommand` object available on the message (the `IUseSqlCommand` interface implementation)
+DataPipe includes first-class structural filters for resilience and control:
 
-The pipeline is invoked asynchronously with the passed in `AuthorizeMessage` message and is routed through each aspect and filter in order. At the end of the pipeline, the message has been fully processed, mutated, and enriched as needed.
+- `OnTimeoutRetry` for automatic customizable retries
+- `OnCircuitBreak` for fail-fast protection when dependencies are unhealthy
+- `OnRateLimit` for backpressure or rejection strategies
+- `IfTrue` and `Policy` for conditional behavior and dynamic routing
+- `OpenSqlConnection` and `StartTransaction` for explicit database scoping
+
+You get robust behavior without pulling in a stack of large third-party frameworks.
+
+---
+
+## Walkthrough: From Simple to Powerful
+
+Start with one question: what is the smallest useful slice?
+
+### 1. One message, one filter
+
+A message carries the data a slice needs. Name it after what it represents.
 
 ```csharp
-// Build an authorization pipeline
-public async Task Authorize(AuthorizeMessage msg)
+public sealed class RegisterCustomerMessage : BaseMessage
 {
-    var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
-    var policy = new SuppressAllExceptErrorsPolicy("Authorize");
-    var adapter = new SqlServerTelemetryAdapter(TelemetryMode.PipelineAndErrors, AppSettings.Instance.TelemetryDb, policy);
-
-    var pipe = new DataPipe<AuthorizeMessage> { Name = "Authorize", TelemetryMode = TelemetryMode.PipelineAndErrors };
-    pipe.Use(new ExceptionAspect<AuthorizeMessage>());
-    pipe.Use(new LoggingAspect<AuthorizeMessage>(logger, "Authorize Request", env));
-    pipe.UseIf(env != "Development", new TelemetryAspect<AuthorizeMessage>(adapter));
-    pipe.Add(
-        new OnTimeoutRetry<AuthorizeMessage>(maxRetries: 3,
-            new OpenSqlConnection<AuthorizeMessage>(connectionString: "Data Source=...",
-                new GetUserClaims())));
-
-    await pipe.Invoke(msg);
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
 }
 ```
 
-Everything that happens in this slice:
-
-- Is explicit
-- Is ordered
-- Can be reasoned about in isolation
-
-There’s no global behavior to discover or debug.
-
----
-
-## Cross-Cutting Concerns via Aspects
-
-Cross-cutting behaviors like logging, retries, metrics, and telemetry are applied explicitly using aspects:
+A filter performs a single operation on that message.
 
 ```csharp
-var adapter = new FileLoggingTelemetryAdapter(TelemetryMode.PipelineAndFilters, connectionString);
-pipe.Use(new BasicConsoleLoggingAspect());
-pipe.Use(new TelemetryAspect(fileAdapter));
+public sealed class ValidateCustomerInput : Filter<RegisterCustomerMessage>
+{
+    public Task Execute(RegisterCustomerMessage msg)
+    {
+        if (string.IsNullOrWhiteSpace(msg.Name))
+            msg.Execution.Stop("Name is required.");
+
+        if (string.IsNullOrWhiteSpace(msg.Email))
+            msg.Execution.Stop("Email is required.");    
+
+        if (!msg.Email.Contains('@'))
+            msg.Execution.Stop("A valid email address is required.");
+
+        return Task.CompletedTask;
+    }
+}
 ```
 
-Or conditionally, for example based on environment:
+We can then construct a pipeline for that message type with that filter and invoke it:
 
 ```csharp
-var adapter = new JsonConsoleTelemetryAdapter(new MinimumDurationPolicy(50));
-pipe.UseIf(isDevelopment, new TelemetryAspect<OrderMessage>(adapter));
+var pipe = new DataPipe<RegisterCustomerMessage>();
+pipe.Add(new ValidateCustomerInput());
+await pipe.Invoke(message);
 ```
 
-This allows:
+That is the core mental model: a message flows through filters, each one doing exactly one thing.
 
-- Different behavior per pipeline
-- Different behavior per environment
-- Clear and safe evolution of operational concerns
+### 2. Need another step? Add another filter
+
+```csharp
+public sealed class NormalizeEmail : Filter<RegisterCustomerMessage>
+{
+    public Task Execute(RegisterCustomerMessage msg)
+    {
+        msg.Email = msg.Email.Trim().ToLowerInvariant();
+        return Task.CompletedTask;
+    }
+}
+```
+
+Choose the best place within the flow to insert it.
+
+```csharp
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(new NormalizeEmail());
+```
+
+Filters run in order. If `ValidateCustomerInput` stops the pipeline, no further filters execute. No ceremony. Just clear behavior.
+
+**Note** that DataPipe is fully async/await friendly. The two filters above are simple and synchronous and therefore return `Task.CompletedTask`. In the next sections, we will see filters that perform asynchronous work and return real tasks.
+
+### 3. Need to persist the customer? Introduce SQL
+
+Up to now the message held only business data. But to write to a database, a filter needs a `SqlCommand`*. Where does that come from?
+
+`OpenSqlConnection` opens a connection, creates a `SqlCommand`, and assigns it to the message automatically. To receive it, the message opts into the `IUseSqlCommand` interface which is found in the `SCB.DataPipe.Sql` package:
+
+```csharp
+public sealed class RegisterCustomerMessage : BaseMessage, IUseSqlCommand
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+
+    // Added for OpenSqlConnection - provides the SqlCommand to filters
+    public SqlCommand Command { get; set; } = default!;
+}
+```
+
+Now filters can use `msg.Command` inside an `OpenSqlConnection` scope:
+
+```csharp
+public sealed class InsertCustomer : Filter<RegisterCustomerMessage>
+{
+    public async Task Execute(RegisterCustomerMessage msg)
+    {
+        msg.Command.CommandText = "INSERT INTO Customers (Name, Email) VALUES (@name, @email)";
+        msg.Command.Parameters.Clear();
+        msg.Command.Parameters.AddWithValue("@name", msg.Name);
+        msg.Command.Parameters.AddWithValue("@email", msg.Email);
+        await msg.Command.ExecuteNonQueryAsync(msg.CancellationToken);
+    }
+}
+```
+
+Again, we insert the new filter at the right place in the flow but now scoped to the connection:
+
+```csharp
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+        new InsertCustomer()));
+```
+
+\*`IUseSqlCommand` is optional and geared toward adhoc sql or stored procedures.
+
+DataPipe is equally at home with other data access approaches including Entity Framework but is not built in to avoid package dependencies. If you prefer Entity Framework or another data access approach, model your filters around that instead. See the `Docs/Patterns` directory for examples you can drop straight in to your project.
+
+### 4. Need atomic writes? Add `StartTransaction`
+
+Suppose we now also need to record an audit trail when a customer is registered:
+
+```csharp
+public sealed class InsertRegistrationAudit : Filter<RegisterCustomerMessage>
+{
+    public async Task Execute(RegisterCustomerMessage msg)
+    {
+        msg.Command.CommandText = "INSERT INTO RegistrationAudit (Email, RegisteredAtUtc) VALUES (@email, SYSUTCDATETIME())";
+        msg.Command.Parameters.Clear();
+        msg.Command.Parameters.AddWithValue("@email", msg.Email);
+        await msg.Command.ExecuteNonQueryAsync(msg.CancellationToken);
+    }
+}
+```
+
+Two writes should succeed or fail together. `StartTransaction` provides that, and requires the message to implement `IAmCommittable`:
+
+```csharp
+public sealed class RegisterCustomerMessage : BaseMessage, IUseSqlCommand, IAmCommittable
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public SqlCommand Command { get; set; } = default!;
+
+    // Added for StartTransaction - controls whether the transaction commits
+    public bool Commit { get; set; } = true;
+}
+```
+
+```csharp
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new StartTransaction<RegisterCustomerMessage>(
+        new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+            new InsertCustomer(),
+            new InsertRegistrationAudit())));
+```
+
+Both writes share the same connection and transaction. If either filter fails, the transaction rolls back automatically.
+
+As you can see we are building our business use-case from inside out, composing the behavior we need step by step. The result is a clear, readable slice that does exactly what we want.
+
+
+### 5. Need automatic retries? Add `OnTimeoutRetry`
+
+Database connections time out. Networks hiccup. `OnTimeoutRetry` wraps filters and retries them on transient failures. It requires the message to implement `IAmRetryable`, so we go back and add it:
+
+```csharp
+public sealed class RegisterCustomerMessage : BaseMessage, IUseSqlCommand, IAmCommittable, IAmRetryable
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public SqlCommand Command { get; set; } = default!;
+    public bool Commit { get; set; } = true;
+
+    // Added for OnTimeoutRetry - tracks retry state
+    public int Attempt { get; set; }
+    public int MaxRetries { get; set; }
+    public Action<int> OnRetrying { get; set; } = _ => { };
+}
+```
+
+We wrap the transaction and its writes inside the retry filter:
+
+```csharp
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new OnTimeoutRetry<RegisterCustomerMessage>(maxRetries: 3,
+        new StartTransaction<RegisterCustomerMessage>(
+            new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+                new InsertCustomer(),
+                new InsertRegistrationAudit()))));
+```
+
+If the transaction fails with a transient error, `OnTimeoutRetry` will retry up to 3 times with a sliding delay ensuring a new transaction is started each time. No external library required.
+
+### 6. Need fail-fast protection? Add `OnCircuitBreak`
+
+If the database is down, retrying every request wastes time and resources. `OnCircuitBreak` monitors failures and trips open after a threshold, causing subsequent requests to fail fast until the dependency recovers.
+
+We wrap it around the retry:
+
+```csharp
+var circuit = new CircuitBreakerState();
+
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new OnCircuitBreak<RegisterCustomerMessage>(circuit,
+        failureThreshold: 5,
+        breakDuration: TimeSpan.FromSeconds(30),
+        new OnTimeoutRetry<RegisterCustomerMessage>(maxRetries: 3,            
+            new StartTransaction<RegisterCustomerMessage>(
+                new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+                    new InsertCustomer(),
+                    new InsertRegistrationAudit())))));
+```
+
+`CircuitBreakerState` is designed to be shared. In a web API, register it as a singleton so all requests hitting the same resource share the same circuit.
+
+### 7. Need throughput control? Add `OnRateLimit`
+
+Under heavy load you may want to throttle how fast requests reach the database. `OnRateLimit` implements a leaky-bucket strategy that can either delay requests until capacity is available or reject them outright.
+
+In this example we wrap it around the circuit breaker:
+
+```csharp
+var circuit = new CircuitBreakerState();
+var limiter = new RateLimiterState();
+
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new OnRateLimit<RegisterCustomerMessage>(limiter,
+        capacity: 200,
+        leakInterval: TimeSpan.FromSeconds(1),
+        behavior: RateLimitExceededBehavior.Delay,
+        new OnCircuitBreak<RegisterCustomerMessage>(circuit,
+            failureThreshold: 5,
+            breakDuration: TimeSpan.FromSeconds(30),
+            new OnTimeoutRetry<RegisterCustomerMessage>(maxRetries: 3,                
+                new StartTransaction<RegisterCustomerMessage>(
+                    new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+                        new InsertCustomer(),
+                        new InsertRegistrationAudit()))))));
+```
+
+#### What just happened?
+
+In a small number of composable steps we have seen how we can build production-grade resilience: rate limiting, circuit breaking, and automatic retries - all without a single external dependency. Note that all of these patterns are optional and composable. If you don't need rate limiting, just leave it out. If you want to reject instead of delay when the limit is exceeded, change the behavior. You have full control over how these patterns work together.
+
+### 8. Put it inside a full DataPipe with aspects
+
+All that remains is to add cross-cutting concerns like logging and exception handling as aspects. Aspects wrap the entire pipeline and can be added or removed without modifying the core behavior. See the documentation for built-in aspects, what they offer out of the box, and how to create your own.
+
+```csharp
+var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+var circuit = new CircuitBreakerState();
+var limiter = new RateLimiterState();
+
+var pipe = new DataPipe<RegisterCustomerMessage>
+{
+    Name = "RegisterCustomer",
+    TelemetryMode = TelemetryMode.Off
+};
+
+pipe.Use(new ExceptionAspect<RegisterCustomerMessage>());
+pipe.Use(new LoggingAspect<RegisterCustomerMessage>(logger, "Register Customer", env));
+
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new OnRateLimit<RegisterCustomerMessage>(limiter, 200, TimeSpan.FromSeconds(1),
+        RateLimitExceededBehavior.Delay,
+        new OnCircuitBreak<RegisterCustomerMessage>(circuit,
+            failureThreshold: 5,
+            breakDuration: TimeSpan.FromSeconds(30),
+            new OnTimeoutRetry<RegisterCustomerMessage>(3,
+                new StartTransaction<RegisterCustomerMessage>(
+                    new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+                        new InsertCustomer(),
+                        new InsertRegistrationAudit()))))));
+
+await pipe.Invoke(message);
+```
+
+Read it top to bottom. Every step is visible. Every decision is explicit.
 
 ---
 
-## Observability You Control
+## Evolving the Slice Without Rewriting It
 
-DataPipe does not assume:
+Now imagine requirements arrive one by one.
 
-- A cloud provider
-- A subscription or hosted telemetry service
-- A vendor-defined data model
+### "The boss says: guard writes behind database.modify permission"
 
-Instead:
+Insert a permission guard filter. No existing filter is modified.
 
-- Pipelines emit telemetry events
-- Policies shape what is captured
-- Adapters decide where it goes
+```csharp
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
 
-Out of the box you can:
+pipe.Add(new RequirePermission("database.modify")); <- new filter added here
 
-- Capture business events only
-- Capture structural events only
-- Capture errors only
-- Capture everything in development
-- Capture minimal telemetry in production
+pipe.Add(
+    new StartTransaction<RegisterCustomerMessage>(
+        new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+            new InsertCustomer(),
+            new InsertRegistrationAudit())));
+```
 
-And you can send telemetry to:
+### "Turn this feature on and off with a config flag"
 
-- SQL Server
-- File systems
-- OpenTelemetry
+Add a property to the message and wrap the pipeline body with `IfTrue`:
 
-Or skip telemetry entirely
+```csharp
+public sealed class RegisterCustomerMessage : BaseMessage, IUseSqlCommand, IAmCommittable, IAmRetryable
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public SqlCommand Command { get; set; } = default!;
+    public bool Commit { get; set; } = true;
+    public int Attempt { get; set; }
+    public int MaxRetries { get; set; }
+    public Action<int> OnRetrying { get; set; } = _ => { };
 
-This gives teams application insights without external dependencies, cost, or lock-in.
+    // Feature flag - controlled by configuration
+    public bool IsRegistrationEnabled { get; init; }
+}
+```
+
+```csharp
+pipe.Add(
+    new IfTrue<RegisterCustomerMessage>(m => m.IsRegistrationEnabled, <- new conditional wrapper
+        new NormalizeEmail(),
+        new ValidateCustomerInput(),
+        new RequirePermission("database.modify"),        
+        new StartTransaction<RegisterCustomerMessage>(
+            new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+                new InsertCustomer(),
+                new InsertRegistrationAudit()))));
+```
+
+This is where DataPipe shines: behavior grows by composition, not by invasive rewrites.
 
 ---
 
-## Key Features
+## Add Telemetry Last, Not First
 
-- Composable filters for clear workflows
-- Aspects for cross-cutting behavior
-- Conditional pipeline construction (AddIf, UseIf)
-- Conditional runtime behavior (IfTrue, Policy, etc)
-- Policy-driven telemetry
-- Async-first design
-- Minimal footprint, zero hidden magic
-- Works in ANY .NET host: ASP.NET, console apps, services, and more
+Telemetry is important and DataPipe fully supports it, but like most features, it is optional.
+
+This quick example covers the basics but see the documentation for more on telemetry policies, adapters, and aspects, and how to create your own.
+
+```csharp
+var policy = new SuppressAllExceptErrorsPolicy("RegisterCustomer");
+var adapter = new ConsoleTelemetryAdapter(policy);
+
+pipe.TelemetryMode = TelemetryMode.PipelineAndErrors;
+pipe.UseIf(env != "Development", new TelemetryAspect<RegisterCustomerMessage>(adapter));
+```
+
+DataPipe does not force a vendor or cloud path. Telemetry adapters and policies let you shape what to capture and where it goes.
+
+---
+
+## Why This Works in Real Enterprise Teams
+
+- Features are vertical slices, not accidental call chains
+- Pipelines are readable and testable
+- Cross-cutting concerns are explicit and local
+- Resilience patterns are composable and built-in
+- New requirements are usually insert/reorder operations, not rewrites
+
+These ideas have been refined in production systems for more than a decade.
 
 ---
 
 ## Getting Started
 
 Install from NuGet:
+
 ```bash
 dotnet add package SCB.DataPipe
 ```
 
-Explore the examples and tests in the repo for real usage patterns. These are all used and tested in production systems right now.
+Optional:
 
----
+```bash
+dotnet add package SCB.DataPipe.Sql
+```
 
-## Design Philosophy
-
-DataPipe is intentionally:
-
-- Small and focused
-- Business-first
-- Clear and maintainable
-
-It orchestrates in-process business workflows - not queues, not middleware, not frameworks. Pipelines describe behavior as code that a team can read and reason about months or years later.
+Then explore examples and tests in this repository for real composition patterns.
 
 ---
 
@@ -181,15 +471,15 @@ DataPipe deliberately does not attempt to be:
 - A workflow engine
 - A rules engine
 - A scheduler
-- A parallel execution framework
+- A parallel execution framework (see documentation for patterns on how DataPipe easily supports concurrent execution when needed)
 
-Its goal is simple and powerful: describe what happens to a message, step by step, in a way that remains clear and intentional.
+Its goal is simple: describe what happens to a message, step by step, in a way that remains clear and intentional.
 
 ---
 
 ## Learn More
 
-See Docs for real sample pipelines and patterns.
+See Docs for sample pipelines and patterns.
 
 ---
 
