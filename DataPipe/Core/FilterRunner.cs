@@ -20,12 +20,13 @@ internal static class FilterRunner
         Filter<T> filter, T msg, string pipelineName) where T : BaseMessage
     {
         var reason = string.Empty;
-        var fsw = Stopwatch.StartNew();
+        var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+        Stopwatch? fsw = telemetryEnabled ? Stopwatch.StartNew() : null;
 
         var selfEmitting = filter is IAmStructural structural && !structural.EmitTelemetryEvent;
         var emitStart = filter is not IAmStructural || (filter is IAmStructural s && s.EmitTelemetryEvent);
 
-        if (!msg.ShouldStop && emitStart)
+        if (telemetryEnabled && !msg.ShouldStop && emitStart)
         {
             var @start = new TelemetryEvent
             {
@@ -60,7 +61,7 @@ internal static class FilterRunner
 
         try
         {
-            await filter.Execute(msg);
+            await filter.Execute(msg).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -70,9 +71,9 @@ internal static class FilterRunner
         }
         finally
         {
-            fsw.Stop();
+            fsw?.Stop();
 
-            if (!selfEmitting)
+            if (telemetryEnabled && !selfEmitting)
             {
                 var @complete = new TelemetryEvent
                 {
@@ -87,12 +88,12 @@ internal static class FilterRunner
                     Outcome = msg.ShouldStop ? TelemetryOutcome.Stopped : outcome,
                     Reason = msg.ShouldStop ? msg.Execution.Reason : reason,
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = fsw.ElapsedMilliseconds,
-                    Attributes = msg.Execution.TelemetryAnnotations.Count != 0
+                    DurationMs = fsw?.ElapsedMilliseconds ?? 0,
+                    Attributes = msg.Execution.HasTelemetryAnnotations
                         ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations)
                         : []
                 };
-                msg.Execution.TelemetryAnnotations.Clear();
+                msg.Execution.ClearTelemetryAnnotations();
                 if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
             }
 
@@ -101,7 +102,7 @@ internal static class FilterRunner
                 msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
             }
 
-            msg.OnLog?.Invoke($"COMPLETED: {filter.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
+            msg.OnLog?.Invoke($"COMPLETED: {filter.GetType().Name.Split('`')[0]} ({fsw?.ElapsedMilliseconds ?? 0}ms)");
         }
 
         return true;
@@ -117,7 +118,7 @@ internal static class FilterRunner
     {
         foreach (var f in filters)
         {
-            if (!await ExecuteWithTelemetryAsync(f, msg, pipelineName))
+            if (!await ExecuteWithTelemetryAsync(f, msg, pipelineName).ConfigureAwait(false))
                 return false;
         }
         return true;

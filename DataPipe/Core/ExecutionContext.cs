@@ -9,7 +9,17 @@ namespace DataPipe.Core
     {
         public bool IsStopped { get; private set; }
         public string? Reason { get; private set; }
-        public Dictionary<string, object> TelemetryAnnotations { get; } = new();
+
+        private Dictionary<string, object>? _telemetryAnnotations;
+
+        public Dictionary<string, object> TelemetryAnnotations =>
+            _telemetryAnnotations ??= new();
+
+        public bool HasTelemetryAnnotations =>
+            _telemetryAnnotations != null && _telemetryAnnotations.Count != 0;
+
+        public void ClearTelemetryAnnotations() =>
+            _telemetryAnnotations?.Clear();
 
         public void Stop(string? reason = null)
         {

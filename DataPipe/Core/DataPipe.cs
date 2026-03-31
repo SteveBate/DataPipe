@@ -109,7 +109,7 @@ namespace DataPipe.Core
 
             try
             {
-                await _aspects.First().Execute(msg);
+                await _aspects.First().Execute(msg).ConfigureAwait(false);
             }
             finally
             {
@@ -127,19 +127,23 @@ namespace DataPipe.Core
         {
             var pipeOutcome = TelemetryOutcome.None;
             var pipeStopReason = string.Empty;
-            var psw = Stopwatch.StartNew();
-            var @begin = new TelemetryEvent
+            var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+            var psw = telemetryEnabled ? Stopwatch.StartNew() : null;
+            if (telemetryEnabled)
             {
-                Actor = msg.Actor,
-                PipelineName = Name,
-                Component = Name,
-                Service = msg.Service,
-                Scope = TelemetryScope.Pipeline,
-                Role = FilterRole.None,
-                Phase = TelemetryPhase.Start,
-                MessageId = msg.CorrelationId,
-                Timestamp = DateTimeOffset.UtcNow };
-            if (msg.ShouldEmitTelemetry(@begin)) msg.OnTelemetry?.Invoke(@begin);
+                var @begin = new TelemetryEvent
+                {
+                    Actor = msg.Actor,
+                    PipelineName = Name,
+                    Component = Name,
+                    Service = msg.Service,
+                    Scope = TelemetryScope.Pipeline,
+                    Role = FilterRole.None,
+                    Phase = TelemetryPhase.Start,
+                    MessageId = msg.CorrelationId,
+                    Timestamp = DateTimeOffset.UtcNow };
+                if (msg.ShouldEmitTelemetry(@begin)) msg.OnTelemetry?.Invoke(@begin);
+            }
             
             pipeOutcome = TelemetryOutcome.Success;
             msg.OnStart?.Invoke(msg);
@@ -153,13 +157,13 @@ namespace DataPipe.Core
                     foreach (var f in _filters)
                     {
                         var reason = string.Empty;
-                        var fsw = Stopwatch.StartNew();
+                        Stopwatch? fsw = telemetryEnabled ? Stopwatch.StartNew() : null;
                         
                         // Check if this structural filter manages its own telemetry
                         var selfEmitting = f is IAmStructural structural && !structural.EmitTelemetryEvent;
                         var emitStart = f is not IAmStructural || (f is IAmStructural s && s.EmitTelemetryEvent);
                         
-                        if (!msg.ShouldStop && emitStart)
+                        if (telemetryEnabled && !msg.ShouldStop && emitStart)
                         {
                             var @start = new TelemetryEvent
                             {
@@ -188,7 +192,7 @@ namespace DataPipe.Core
 
                         try
                         {
-                            await f.Execute(msg);
+                            await f.Execute(msg).ConfigureAwait(false);
                         }
                         catch (Exception ex)
                         {
@@ -198,10 +202,10 @@ namespace DataPipe.Core
                         }
                         finally
                         {
-                            fsw.Stop();
+                            fsw?.Stop();
                             
                             // Skip End event for self-emitting structural filters (they emit their own)
-                            if (!selfEmitting)
+                            if (telemetryEnabled && !selfEmitting)
                             {
                                 var @complete = new TelemetryEvent
                                 {
@@ -216,13 +220,13 @@ namespace DataPipe.Core
                                     Outcome = outcome,
                                     Reason = reason,
                                     Timestamp = DateTimeOffset.UtcNow,
-                                    DurationMs = fsw.ElapsedMilliseconds,
-                                    Attributes = msg.Execution.TelemetryAnnotations.Count != 0 ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
+                                    DurationMs = fsw?.ElapsedMilliseconds ?? 0,
+                                    Attributes = msg.Execution.HasTelemetryAnnotations ? new Dictionary<string, object>(msg.Execution.TelemetryAnnotations) : []
                                 };
-                                msg.Execution.TelemetryAnnotations.Clear();
+                                msg.Execution.ClearTelemetryAnnotations();
                                 if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
                             }
-                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw.ElapsedMilliseconds}ms)");
+                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw?.ElapsedMilliseconds ?? 0}ms)");
                         }
                     }
                 }
@@ -231,7 +235,7 @@ namespace DataPipe.Core
                     foreach (var f in _finallyFilters)
                     {
                         msg.OnLog?.Invoke($"FINALLY: {f.GetType().Name.Split('`')[0]}");
-                        await f.Execute(msg);
+                        await f.Execute(msg).ConfigureAwait(false);
                     }
                 }
                 msg.OnSuccess?.Invoke(msg);
@@ -245,25 +249,28 @@ namespace DataPipe.Core
                     pipeStopReason = msg.Execution.Reason;
                 }
 
-                psw.Stop();
-                var @end = new TelemetryEvent
+                psw?.Stop();
+                if (telemetryEnabled)
                 {
-                    Actor = msg.Actor,
-                    PipelineName = Name,
-                    Component = Name,
-                    Service = msg.Service,
-                    Scope = TelemetryScope.Pipeline,
-                    Role = FilterRole.None,
-                    Phase = TelemetryPhase.End,
-                    Outcome = pipeOutcome,
-                    Reason = pipeStopReason,
-                    MessageId = msg.CorrelationId,
-                    Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = psw.ElapsedMilliseconds
-                };
-                if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
+                    var @end = new TelemetryEvent
+                    {
+                        Actor = msg.Actor,
+                        PipelineName = Name,
+                        Component = Name,
+                        Service = msg.Service,
+                        Scope = TelemetryScope.Pipeline,
+                        Role = FilterRole.None,
+                        Phase = TelemetryPhase.End,
+                        Outcome = pipeOutcome,
+                        Reason = pipeStopReason,
+                        MessageId = msg.CorrelationId,
+                        Timestamp = DateTimeOffset.UtcNow,
+                        DurationMs = psw?.ElapsedMilliseconds ?? 0
+                    };
+                    if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
+                }
                 msg.OnComplete?.Invoke(msg);
-                msg.OnLog?.Invoke($"PIPELINE: {Name} - Outcome: {pipeOutcome} ({psw.ElapsedMilliseconds}ms)");
+                msg.OnLog?.Invoke($"PIPELINE: {Name} - Outcome: {pipeOutcome} ({psw?.ElapsedMilliseconds ?? 0}ms)");
             }
         }
 
@@ -273,7 +280,7 @@ namespace DataPipe.Core
             private readonly Func<T, Task> _inner;
             public DefaultAspect(Func<T, Task> action) => _inner = action ?? throw new ArgumentNullException(nameof(action));
             public Aspect<T> Next { get; set; } = default!;
-            public async Task Execute(T msg) => await _inner(msg);
+            public async Task Execute(T msg) => await _inner(msg).ConfigureAwait(false);
         }
 
         private readonly List<Filter<T>> _filters = new List<Filter<T>>();
