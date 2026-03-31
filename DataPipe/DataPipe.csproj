@@ -7,7 +7,7 @@
     <IsPackable>true</IsPackable>
 
     <PackageId>SCB.DataPipe</PackageId>
-    <Version>4.6.0</Version>
+    <Version>4.6.1</Version>
 
     <Authors>Stephen C. Bate</Authors>
     <Description>DataPipe: lightweight, flexible .NET pipeline framework for async workflows, retries, and conditional execution.</Description>
@@ -15,6 +15,12 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageTags>datapipe;pipeline;message-processing;dotnet;async</PackageTags>
+
+    <!-- SourceLink: enable source-stepping in debuggers -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +31,7 @@
     <None Include="README.md" Pack="true" PackagePath="" />
 
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>
