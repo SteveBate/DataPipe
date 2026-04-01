@@ -415,9 +415,9 @@ This is where DataPipe shines: behavior grows by composition, not by invasive re
 
 ---
 
-## Add Telemetry Last, Not First
+## First-Class Support for Telemetry
 
-Telemetry is important and DataPipe fully supports it, but like most features, it is optional.
+Telemetry is important and DataPipe fully supports it, but like most features, it is optional. When you need it, like other cross-cutting concerns, you add it as an aspect but with powerful policies and adapters that let you control what gets captured and where it goes.
 
 This quick example covers the basics but see the documentation for more on telemetry policies, adapters, and aspects, and how to create your own.
 

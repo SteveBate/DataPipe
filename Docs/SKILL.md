@@ -2,8 +2,7 @@
 name: datapipe
 description: A lightweight, in-memory pipeline library for .NET.
 ---
-
-> **Version:** SCB.DataPipe 4.6.0 / SCB.DataPipe.Sql 4.6.0  
+  
 > **Platform:** .NET 8+  
 > **Packages:** `SCB.DataPipe`, `SCB.DataPipe.Sql` (optional, for SQL Server)
 
