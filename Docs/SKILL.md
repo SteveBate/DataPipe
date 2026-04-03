@@ -2327,14 +2327,18 @@ Pipeline.Invoke(msg)
 | Filter | Constraint | Purpose |
 |--------|-----------|---------|
 | `IfTrue<T>(predicate, ifTrue, ifFalse?)` | `BaseMessage` | Runtime conditional execution |
+| `IfTrueElse<T>(predicate, thenFilters, elseFilters)` | `BaseMessage` | Conditional with required else branch |
 | `Policy<T>(selector)` | `BaseMessage` | Multi-branch runtime dispatch |
 | `Sequence<T>(filters...)` | `BaseMessage` | Group filters as one logical step |
 | `OnTimeoutRetry<T>(max, filters...)` | `IAmRetryable` | Retry on timeout |
 | `OnCircuitBreak<T>(state, threshold?, duration?, filters...)` | `BaseMessage` | Circuit breaker pattern |
 | `OnRateLimit<T>(state, capacity, leakInterval, behavior?, filters...)` | `BaseMessage` | Rate limiting (leaky bucket) |
+| `Timeout<T>(duration, filters...)` | `BaseMessage` | Timeout execution |
+| `DelayExecution<T>(delay, filters...)` | `BaseMessage` | Delay before execution |
 | `RepeatUntil<T>(predicate, filters...)` | `BaseMessage` | Loop until predicate true |
 | `Repeat<T>(filters...)` | `BaseMessage` | Infinite loop (break via Stop) |
 | `ForEach<TMsg, TItem>(selector, setter, filters...)` | `BaseMessage` | Iterate collection |
+| `TryCatch<T>(tryFilters..., catchFilters...)` | `BaseMessage` | Exception handling with separate branches |
 
 ### Filters (DataPipe.Sql)
 
