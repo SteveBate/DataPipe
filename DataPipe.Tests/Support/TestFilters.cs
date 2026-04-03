@@ -175,4 +175,27 @@ namespace DataPipe.Tests.Support
             return Task.CompletedTask;
         }
     }
+
+    class SlowFilter : Filter<TestMessage>
+    {
+        private readonly int _delayMs;
+
+        public SlowFilter(int delayMs) => _delayMs = delayMs;
+
+        public async Task Execute(TestMessage msg)
+        {
+            await Task.Delay(_delayMs, msg.CancellationToken);
+            msg.Number += 1;
+        }
+    }
+
+    class RecordExceptionFilter : Filter<TestMessage>
+    {
+        public Task Execute(TestMessage msg)
+        {
+            var ex = msg.State.Get<Exception>("TryCatch.Exception");
+            msg.StatusMessage = $"caught:{ex.GetType().Name}";
+            return Task.CompletedTask;
+        }
+    }
 }

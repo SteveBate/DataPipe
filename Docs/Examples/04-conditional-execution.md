@@ -59,3 +59,47 @@ public async Task ProcessDocument(Document doc)
 - The nested filter can itself be a composite or another conditional
 
 This keeps branching logic visible inside the pipeline definition, not buried in filter implementations.
+
+---
+
+## If / Else branching with IfTrueElse
+
+When you need both a true and false path, use `IfTrueElse<T>` instead of two separate `IfTrue<T>` calls with inverted predicates:
+
+```csharp
+public async Task ProcessOrder(OrderData data)
+{
+    var pipeline = new DataPipe<OrderMessage>();
+    
+    pipeline.Add(
+        new ValidateOrder(),
+        new IfTrueElse<OrderMessage>(msg => msg.Customer.IsPremium,
+            thenFilters: [new ApplyPremiumDiscount(), new AssignPriorityShipping()],
+            elseFilters: [new ApplyStandardPricing(), new AssignStandardShipping()]
+        ),
+        new SaveOrder()
+    );
+    
+    var message = new OrderMessage { Order = data };
+    await pipeline.Invoke(message);
+}
+```
+
+### What happens
+
+- The predicate is evaluated once when the filter is reached
+- If `true`, the `thenFilters` array executes
+- If `false`, the `elseFilters` array executes
+- Execution continues after whichever branch completes
+
+### Why not two IfTrue calls?
+
+```csharp
+// Avoid this — evaluates the same condition twice
+pipeline.Add(new IfTrue<OrderMessage>(msg => msg.Customer.IsPremium,
+    new ApplyPremiumDiscount()));
+pipeline.Add(new IfTrue<OrderMessage>(msg => !msg.Customer.IsPremium,
+    new ApplyStandardPricing()));
+```
+
+Using `IfTrueElse` evaluates the predicate once, makes the branching intent explicit, and avoids subtle bugs if the predicate has side effects or depends on state that changes between evaluations.

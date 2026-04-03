@@ -735,20 +735,13 @@ Structural filters are infrastructure wrappers that manage resources (connection
 
 ### 6.1 IfTrue\<T\> — Runtime Conditional
 
-Evaluates a predicate at execution time. If true, executes the nested filter(s). If false, skips (or executes the optional else filter).
+Evaluates a predicate at execution time. If true, executes the nested filter(s). If false, skips them.
 
 ```csharp
 // Simple conditional
 pipeline.Add(new IfTrue<OrderMessage>(
     msg => msg.RequiresApproval,
     new SendForApproval()
-));
-
-// With else branch
-pipeline.Add(new IfTrue<OrderMessage>(
-    msg => msg.IsValid,
-    new ProcessOrder(),       // if true
-    new RejectOrder()         // if false
 ));
 
 // Nested in pipeline
@@ -761,6 +754,8 @@ pipeline.Add(
     new SaveOrder()
 );
 ```
+
+For if/else branching, use `IfTrueElse<T>` (see 6.13).
 
 ### 6.2 Policy\<T\> — Multi-Branch Runtime Dispatch
 
@@ -905,8 +900,7 @@ pipeline.Add(new OnRateLimit<OrderMessage>(shopifyThrottle,
 Loops child filters until the predicate returns `true`:
 
 ```csharp
-pipeline.Add(new RepeatUntil<BatchMessage>(
-    msg => msg.NothingToDo,      // stop when true
+pipeline.Add(new RepeatUntil<BatchMessage>(msg => msg.NothingToDo,      // stop when true
     new ResetState(),
     new GetNextBatch(),
     new ProcessBatch()
@@ -995,7 +989,80 @@ pipeline.Add(new StartTransaction<OrderMessage>(IsolationLevel.Serializable,
 - An exception is thrown
 - `msg.Execution.Stop()` was called
 
-### 6.12 Standard Nesting Convention
+### 6.12 DelayExecution\<T\> — Throttle / Pause
+
+Adds a delay before executing child filters. Useful for throttling API calls in loops or adding controlled pauses:
+
+```csharp
+// Delay before an API call inside a loop
+pipeline.Add(new RepeatUntil<SyncMessage>(msg => msg.AllPagesFetched,
+    new DelayExecution<SyncMessage>(TimeSpan.FromMilliseconds(500)),
+    new FetchNextPage(),
+    new ProcessResults()
+));
+
+// Standalone pause (no child filters)
+pipeline.Add(new Repeat<PollingMessage>(
+    new CheckForUpdates(),
+    new ProcessUpdates(),
+    new DelayExecution<PollingMessage>(TimeSpan.FromSeconds(5))
+));
+```
+
+The delay respects `msg.CancellationToken` — it is cancellable and does not block the thread.
+
+### 6.13 IfTrueElse\<T\> — If / Else Branching
+
+Evaluates a predicate and executes one of two filter branches:
+
+```csharp
+pipeline.Add(new IfTrueElse<OrderMessage>(msg => msg.Customer.IsPremium,
+    thenFilters: [new ApplyPremiumDiscount(), new AssignPriorityShipping()],
+    elseFilters: [new ApplyStandardPricing(), new AssignStandardShipping()]
+));
+```
+
+The predicate is evaluated once. Both branches support multiple filters. Use `IfTrueElse` instead of two `IfTrue` calls with inverted predicates — it's clearer and avoids evaluating the condition twice.
+
+### 6.14 Timeout\<T\> — Enforce Maximum Duration
+
+Cancels child filter execution if it exceeds the specified duration. Throws `TimeoutException`:
+
+```csharp
+// Protect against hanging API calls
+pipeline.Add(new Timeout<OrderMessage>(TimeSpan.FromSeconds(30),
+    new CallExternalApi()));
+
+// Combined with retry — each attempt gets its own time limit
+pipeline.Add(new OnTimeoutRetry<OrderMessage>(maxRetries: 3,
+    new Timeout<OrderMessage>(TimeSpan.FromSeconds(5),
+        new CallPaymentGateway())));
+```
+
+**Key:** `Timeout` creates a linked `CancellationToken` that fires after the duration. Child filters see the timeout-aware token via `msg.CancellationToken`. The original token is restored after execution. External cancellation is not masked.
+
+### 6.15 TryCatch\<T\> — Error Handling with Fallback
+
+Executes try filters and, on exception, runs catch filters as a fallback instead of propagating the error:
+
+```csharp
+// Fallback on any error
+pipeline.Add(new TryCatch<PricingMessage>(
+    tryFilters: [new FetchLivePricing()],
+    catchFilters: [new UseCachedPricing(), new LogDegradedMode()]
+));
+
+// Catch only specific exceptions
+pipeline.Add(new TryCatch<OrderMessage>(
+    tryFilters: [new CallPaymentGateway()],
+    catchFilters: [new QueueForManualProcessing()],
+    catchWhen: (ex, msg) => ex is HttpRequestException or TimeoutException
+));
+```
+
+The caught exception is available in catch filters via `msg.State.Get<Exception>("TryCatch.Exception")`. Unmatched exceptions (when `catchWhen` is provided) propagate normally.
+
+### 6.16 Standard Nesting Convention
 
 The production-proven nesting pattern for data mutation pipelines:
 
@@ -1177,8 +1244,7 @@ pipeline.UseIf(env == "Development", new BasicConsoleLoggingAspect<T>());
 pipeline.UseIf(env != "Development", new LoggingAspect<T>(logger, "Name", env));
 
 // IfTrue: runtime decision based on message state
-pipeline.Add(new IfTrue<OrderMessage>(
-    msg => msg.RequiresApproval,
+pipeline.Add(new IfTrue<OrderMessage>(msg => msg.RequiresApproval,
     new SendForApproval()
 ));
 ```
