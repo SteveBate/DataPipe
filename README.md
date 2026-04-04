@@ -10,7 +10,7 @@ Instead of spreading behavior across controllers, handlers, decorators, middlewa
 - Ordered filters
 - Optional aspects for cross-cutting behavior
 
-No hidden middleware. No global magic. No surprises.
+No hidden middleware. No global magic. No surprises. It's a mini-DSL for execution flow that works in any domain.
 
 ---
 
@@ -61,6 +61,7 @@ DataPipe includes first-class structural filters for resilience and control:
 - `OnRateLimit` for backpressure or rejection strategies
 - `IfTrue` and `Policy` for conditional behavior and dynamic routing
 - `OpenSqlConnection` and `StartTransaction` for explicit database scoping
+- `Parallel` for fan-out and concurrent execution
 
 You get robust behavior without pulling in a stack of large third-party frameworks.
 
@@ -471,7 +472,8 @@ DataPipe deliberately does not attempt to be:
 - A workflow engine
 - A rules engine
 - A scheduler
-- A parallel execution framework (see documentation for patterns on how DataPipe easily supports concurrent execution when needed)
+
+DataPipe supports concurrent and parallel execution natively — see the documentation for patterns and examples.
 
 Its goal is simple: describe what happens to a message, step by step, in a way that remains clear and intentional.
 

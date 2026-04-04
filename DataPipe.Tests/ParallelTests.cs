@@ -181,6 +181,63 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
+        public async Task Should_fan_in_branch_results_into_parent_results_bag()
+        {
+            // given — each branch contributes one result to parent thread-safe bag
+            var children = CreateChildren(8);
+            var msg = new TestMessage { Children = children, Service = si };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new Parallel<TestMessage, ChildMessage>(
+                m => m.Children,
+                new LambdaFilter<ChildMessage>(child =>
+                {
+                    msg.Results.Add(child.Id);
+                    child.Value = 1;
+                    return Task.CompletedTask;
+                })));
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(children.Count, msg.Results.Count);
+            CollectionAssert.AreEquivalent(
+                children.Select(c => c.Id).ToList(),
+                msg.Results.ToList());
+            Assert.IsTrue(children.All(c => c.Value == 1));
+        }
+
+        [TestMethod]
+        public async Task Should_allow_post_parallel_fan_in_aggregation_from_results_bag()
+        {
+            // given — aggregate parent results only after all parallel branches complete
+            var children = CreateChildren(6);
+            var msg = new TestMessage { Children = children, Service = si };
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new Parallel<TestMessage, ChildMessage>(
+                m => m.Children,
+                new LambdaFilter<ChildMessage>(async child =>
+                {
+                    await Task.Delay((7 - child.Id) * 5, child.CancellationToken);
+                    msg.Results.Add(child.Id * 10);
+                })));
+            sut.Add(new LambdaFilter<TestMessage>(m =>
+            {
+                m.Number = m.Results.Sum();
+                return Task.CompletedTask;
+            }));
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(children.Sum(c => c.Id * 10), msg.Number);
+            Assert.AreEqual(children.Count, msg.Results.Count);
+        }
+
+        [TestMethod]
         public async Task Should_propagate_exception_when_branch_fails_without_try_catch()
         {
             // given
