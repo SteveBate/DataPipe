@@ -1,13 +1,23 @@
 # OpenDbContext Filter
 
-In order to work with Entity Framework within a DataPipe pipeline, it is common to open a `DbContext` for the duration of processing a message. The `OpenDbContext` filter pattern encapsulates this behavior, ensuring that a `DbContext` is created, assigned to the message, and properly disposed of after processing. In order to keep the pattern flexible, the filter accepts a factory function to create the `DbContext` based on the message. Telemerty events are emitted for observability to ensure correlation with other pipeline activities but can be omitted if not required via the TelemetryMode.Off option on the pipeline.
+In order to work with Entity Framework within a DataPipe pipeline, it is common to open a `DbContext` for the duration of processing a message. The `OpenDbContext` filter pattern encapsulates this behavior, ensuring that a `DbContext` is created, assigned to the message, and properly disposed of after processing. In order to keep the pattern flexible, the filter accepts a factory function to create the `DbContext` based on the message. Telemetry events are emitted for observability to ensure correlation with other pipeline activities but can be omitted if not required via the `TelemetryMode.Off` option on the pipeline.
 
-The interface `IUseDbContext` ensures any message type to be used with EF and the `OpenDbContext` filter has a `DbContext` property.
+Use a layered contract approach:
+
+- `IUseDbContext` for structural filters (`OpenDbContext`, `StartEfTransaction`)
+- `IUseDbContext<TContext>` for business filters that need typed, no-cast access to tables
+
+This keeps structural filters reusable while still enabling strongly typed EF access where needed.
 
 ```csharp
     public interface IUseDbContext
     {
         DbContext DbContext { get; set; }
+    }
+
+    public interface IUseDbContext<TContext> : IUseDbContext where TContext : DbContext
+    {
+        new TContext DbContext { get; set; }
     }
 ```
 
@@ -26,13 +36,34 @@ pipe.Add(
             new MarkCommit()  // Sets msg.Commit = true
         )));
 
-// Message type implementing IUseDbContext and IAmCommittable
-public class OrderMessage : BaseMessage, IUseDbContext, IAmCommittable
+// Message type implementing typed access + base contract for structural filters
+public class OrderMessage : BaseMessage, IUseDbContext<AppDbContext>, IAmCommittable
 {
-    public DbContext DbContext { get; set; } = default!;
+    // Strongly typed DbContext property for business filters
+    public AppDbContext DbContext { get; set; } = default!;
+
+    // Explicit implementation to satisfy non-generic contract for structural filters
+    DbContext IUseDbContext.DbContext
+    {
+        get => DbContext;
+        set => DbContext = (AppDbContext)value;
+    }
     public bool Commit { get; set; } = false;
     // Additional order-related properties
-}`
+}
+
+public sealed class LoadEvents : Filter<OrderMessage>
+{
+    public async Task Execute(OrderMessage msg)
+    {
+        // Typed DbContext access, no cast required
+        var pending = await msg.DbContext.Orders
+            .Where(o => !o.Delivered)
+            .ToListAsync(msg.CancellationToken);
+
+        // ...process pending events
+    }
+}
 ```
 
 ## Implementation
@@ -58,6 +89,7 @@ public class OrderMessage : BaseMessage, IUseDbContext, IAmCommittable
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
             string databaseName = string.Empty;
+            var previousContext = msg.DbContext;
 
             if (msg.DbContext != null)
             {
@@ -97,8 +129,6 @@ public class OrderMessage : BaseMessage, IUseDbContext, IAmCommittable
             try
             {
                 await FilterRunner.ExecuteFiltersAsync(_filters, msg, msg.PipelineName);
-                
-                msg.DbContext = null!;
             }
             catch (Exception ex)
             {
@@ -108,6 +138,10 @@ public class OrderMessage : BaseMessage, IUseDbContext, IAmCommittable
             }
             finally
             {
+                // Always restore previous context reference so retries/exception paths
+                // do not leave msg.DbContext pointing at a disposed instance.
+                msg.DbContext = previousContext!;
+
                 structuralSw.Stop();
                 
                 var @ctxEnd = new TelemetryEvent

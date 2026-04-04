@@ -2,12 +2,22 @@
 
 To support transactional operations in Entity Framework within a DataPipe pipeline, you can use the ready-made `StartEfTransaction<T>` filter. This filter wraps its child filters in an EF transaction, committing or rolling back based on the message state after execution.
 
-The interface `IUseDbContext` ensures any message type to be used with EF and the `OpenDbContext` filter has a `DbContext` property.
+Use a layered contract approach:
+
+- `IUseDbContext` for structural filters (`OpenDbContext`, `StartEfTransaction`)
+- `IUseDbContext<TContext>` for business filters that need typed, no-cast access
+
+`StartEfTransaction<T>` only needs the base `IUseDbContext` contract.
 
 ```csharp
     public interface IUseDbContext
     {
         DbContext DbContext { get; set; }
+    }
+
+    public interface IUseDbContext<TContext> : IUseDbContext where TContext : DbContext
+    {
+        new TContext DbContext { get; set; }
     }
 ```
 
@@ -24,13 +34,35 @@ The following example demonstrates how to use the `OpenDbContext` and `StartEfTr
                 new MarkCommit()  // Sets msg.Commit = true
             )));
 
-    // Message type implementing IUseDbContext and IAmCommittable
-    public class OrderMessage : BaseMessage, IUseDbContext, IAmCommittable
+    // Message type implementing typed access + base contract for structural filters
+    public class OrderMessage : BaseMessage, IUseDbContext<AppDbContext>, IAmCommittable
     {
-        public DbContext DbContext { get; set; } = default!;
+        // Strongly typed DbContext property for business filters
+        public AppDbContext DbContext { get; set; } = default!;
+
+        // Explicit implementation to satisfy non-generic contract for structural filters
+        DbContext IUseDbContext.DbContext
+        {
+            get => DbContext;
+            set => DbContext = (AppDbContext)value;
+        }
+        
         public bool Commit { get; set; } = false;
         // Additional order-related properties
-    }`
+    }
+
+    public sealed class UpdateDeliveredOrdersInStaging : Filter<OrderMessage>
+    {
+        public async Task Execute(OrderMessage msg)
+        {
+            // Typed DbContext access, no cast required
+            var delivered = await msg.DbContext.Orders
+                .Where(o => o.Delivered)
+                .ToListAsync(msg.CancellationToken);
+
+            // ...update staging tables
+        }
+    }
 ```
 
 ## StartEfTransaction Filter
