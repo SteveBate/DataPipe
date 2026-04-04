@@ -1062,7 +1062,41 @@ pipeline.Add(new TryCatch<OrderMessage>(
 
 The caught exception is available in catch filters via `msg.State.Get<Exception>("TryCatch.Exception")`. Unmatched exceptions (when `catchWhen` is provided) propagate normally.
 
-### 6.16 Standard Nesting Convention
+### 6.16 Parallel\<TParent, TChild\> — Concurrent Fan-Out
+
+Fans out over a collection of child messages and executes filters concurrently for each one. Each child is an independent `BaseMessage` instance with its own lifecycle, state, and execution context. Infrastructure properties (lifecycle callbacks, cancellation token, telemetry mode, service identity) are copied automatically from parent to child.
+
+```csharp
+// Basic fan-out over a collection of child messages
+pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+    msg => msg.Orders,
+    (parent, child) => child.ConnectionString = parent.ConnectionString,
+    new ValidateOrder(),
+    new ProcessOrder(),
+    new SaveResult()
+));
+
+// With per-branch error isolation
+pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+    msg => msg.Orders,
+    (parent, child) => child.ConnectionString = parent.ConnectionString,
+    new TryCatch<OrderMessage>(
+        tryFilters: [new ProcessOrder()],
+        catchFilters: [new RecordError()]
+    )));
+
+// With parallelism control
+pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+    msg => msg.Orders,
+    mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
+    maxDegreeOfParallelism: 4,
+    new ProcessOrder()
+));
+```
+
+**Key:** All child filters must be stateless and thread-safe. `OnLog`/`OnTelemetry` handlers must be thread-safe (logging frameworks and telemetry sinks already are). Without `TryCatch`, a single branch failure cancels all remaining branches. Resilience filters (`OnRateLimit`, `OnCircuitBreak`, `OnTimeoutRetry`) compose naturally inside branches — shared state objects like `RateLimiterState` and `CircuitBreakerState` are thread-safe by design.
+
+### 6.17 Standard Nesting Convention
 
 The production-proven nesting pattern for data mutation pipelines:
 

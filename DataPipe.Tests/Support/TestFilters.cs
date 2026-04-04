@@ -198,4 +198,48 @@ namespace DataPipe.Tests.Support
             return Task.CompletedTask;
         }
     }
+
+    // --- Child message filters for Parallel tests ---
+
+    class IncrementChildValueFilter : Filter<ChildMessage>
+    {
+        public Task Execute(ChildMessage msg)
+        {
+            msg.Value += 1;
+            return Task.CompletedTask;
+        }
+    }
+
+    class SlowChildFilter : Filter<ChildMessage>
+    {
+        private readonly int _delayMs;
+
+        public SlowChildFilter(int delayMs) => _delayMs = delayMs;
+
+        public async Task Execute(ChildMessage msg)
+        {
+            await Task.Delay(_delayMs, msg.CancellationToken);
+            msg.Value += 1;
+        }
+    }
+
+    class FailingChildFilter : Filter<ChildMessage>
+    {
+        public Task Execute(ChildMessage msg)
+        {
+            throw new InvalidOperationException($"Child {msg.Id} failed");
+        }
+    }
+
+    class FailOddChildFilter : Filter<ChildMessage>
+    {
+        public Task Execute(ChildMessage msg)
+        {
+            if (msg.Id % 2 != 0)
+                throw new InvalidOperationException($"Odd child {msg.Id} failed");
+            
+            msg.Value += 1;
+            return Task.CompletedTask;
+        }
+    }
 }

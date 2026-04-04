@@ -1,4 +1,4 @@
-# Concurrency and Parallel Execution
+# Concurrency — Multiple Pipeline Invocations
 
 DataPipe is fully async and safe to use concurrently.
 
@@ -9,11 +9,7 @@ Pipelines are stateless, and messages are isolated per invocation, which makes i
 - background workers
 - message consumers
 
-DataPipe deliberately does not manage thread scheduling, degree-of-parallelism, or work distribution. Those concerns are left to the host application, which is best placed to make those decisions.
-
-This keeps DataPipe simple, predictable, and composable while still enabling high-throughput, parallel workloads when used appropriately.
-
-**DataPipe scales by processing more messages, not by making individual pipelines more complex.**
+This is the simplest form of parallelism with DataPipe: the host application drives concurrency by invoking the same pipeline with different messages simultaneously. No special configuration is needed — pipelines are thread-safe by design.
 
 ```csharp
 var pipeline = BuildHtmlScrapePipeline();
@@ -33,3 +29,9 @@ await Parallel.ForEachAsync(messages, async (msg, ct) =>
 
 await Task.WhenAll(messages.Select(msg => pipeline.Invoke(msg)));
 ```
+
+## When to use external concurrency vs the Parallel filter
+
+Use **external concurrency** (this pattern) when the messages arrive independently — from an API controller, a queue consumer, or a batch of work items that all use the same pipeline.
+
+Use the **`Parallel<TParent, TChild>` filter** when a single pipeline needs to fan out over a collection of child messages mid-execution — for example, processing all order lines concurrently after loading the order. See the [Parallel](21-parallel.md) example for details.
