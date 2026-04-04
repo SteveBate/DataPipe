@@ -46,6 +46,7 @@ namespace DataPipe.Sql.Filters
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
             string databaseName = string.Empty;
+            var previousCommand = msg.Command;
 
             using var cnn = new SqlConnection(connectionString);
             await cnn.OpenAsync(msg.CancellationToken).ConfigureAwait(false);
@@ -86,8 +87,6 @@ namespace DataPipe.Sql.Filters
                 {
                     await FilterRunner.ExecuteFiltersAsync(filters, msg, msg.PipelineName).ConfigureAwait(false);
                 }
-                
-                msg.Command = null!;
             }
             catch (Exception ex)
             {
@@ -97,6 +96,10 @@ namespace DataPipe.Sql.Filters
             }
             finally
             {
+                // Always restore previous command reference so retry/exception paths
+                // do not leave msg.Command pointing at a disposed instance.
+                msg.Command = previousCommand!;
+
                 structuralSw.Stop();
                 
                 var @cnnEnd = new TelemetryEvent
