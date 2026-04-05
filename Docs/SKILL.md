@@ -1062,13 +1062,13 @@ pipeline.Add(new TryCatch<OrderMessage>(
 
 The caught exception is available in catch filters via `msg.State.Get<Exception>("TryCatch.Exception")`. Unmatched exceptions (when `catchWhen` is provided) propagate normally.
 
-### 6.16 Parallel\<TParent, TChild\> — Concurrent Fan-Out
+### 6.16 ParallelForEach\<TParent, TChild\> — Concurrent Fan-Out
 
 Fans out over a collection of child messages and executes filters concurrently for each one. Each child is an independent `BaseMessage` instance with its own lifecycle, state, and execution context. Infrastructure properties (lifecycle callbacks, cancellation token, telemetry mode, service identity) are copied automatically from parent to child.
 
 ```csharp
 // Basic fan-out over a collection of child messages
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new ValidateOrder(),
@@ -1077,7 +1077,7 @@ pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
 ));
 
 // With per-branch error isolation
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new TryCatch<OrderMessage>(
@@ -1086,7 +1086,7 @@ pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
     )));
 
 // With parallelism control
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
     maxDegreeOfParallelism: 4,

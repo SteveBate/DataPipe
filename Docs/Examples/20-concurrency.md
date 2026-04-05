@@ -30,8 +30,8 @@ await Parallel.ForEachAsync(messages, async (msg, ct) =>
 await Task.WhenAll(messages.Select(msg => pipeline.Invoke(msg)));
 ```
 
-## When to use external concurrency vs the Parallel filter
+## When to use external concurrency vs the ParallelForEach filter
 
 Use **external concurrency** (this pattern) when the messages arrive independently — from an API controller, a queue consumer, or a batch of work items that all use the same pipeline.
 
-Use the **`Parallel<TParent, TChild>` filter** when a single pipeline needs to fan out over a collection of child messages mid-execution — for example, processing all order lines concurrently after loading the order. See the [Parallel](21-parallel.md) example for details.
+Use the **`ParallelForEach<TParent, TChild>` filter** when a single pipeline needs to fan out over a collection of child messages mid-execution — for example, processing all order lines concurrently after loading the order. See the [Parallel](21-parallel.md) example for details.

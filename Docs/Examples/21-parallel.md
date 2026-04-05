@@ -1,10 +1,10 @@
 # Parallel — Concurrent Fan-Out
 
-`Parallel<TParent, TChild>` fans out over a collection of child messages and executes filters concurrently for each one. It is the concurrent counterpart to `ForEach` — where `ForEach` processes items sequentially on the same message, `Parallel` processes independent child messages concurrently.
+`ParallelForEach<TParent, TChild>` fans out over a collection of child messages and executes filters concurrently for each one. It is the concurrent counterpart to `ForEach` — where `ForEach` processes items sequentially on the same message, `ParallelForEach` processes independent child messages concurrently.
 
-## When to use Parallel vs ForEach
+## When to use ParallelForEach vs ForEach
 
-| | ForEach | Parallel |
+| | ForEach | ParallelForEach |
 |---|---|---|
 | **Items** | Properties of a single message | Independent `BaseMessage` instances |
 | **Execution** | Sequential | Concurrent |
@@ -13,7 +13,7 @@
 
 ## How it works
 
-`Parallel` takes:
+`ParallelForEach` takes:
 
 1. **Selector** — extracts a collection of child messages from the parent
 2. **Mapper** (optional) — copies domain-specific properties from parent to each child
@@ -29,7 +29,7 @@ var pipeline = new DataPipe<BatchMessage>();
 
 pipeline.Add(
     new LoadUnprocessedOrders(),
-    new Parallel<BatchMessage, OrderMessage>(
+    new ParallelForEach<BatchMessage, OrderMessage>(
         msg => msg.Orders,
         (parent, child) => child.ConnectionString = parent.ConnectionString,
         new ValidateOrder(),
@@ -65,7 +65,7 @@ public class OrderMessage : BaseMessage
 Without error handling, a single branch failure cancels all remaining branches. Wrap branch filters in `TryCatch` for independent error handling:
 
 ```csharp
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new TryCatch<OrderMessage>(
@@ -86,7 +86,7 @@ Failed orders are recorded; other orders continue processing.
 ```csharp
 private static readonly RateLimiterState _apiThrottle = new();
 
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new OnRateLimit<OrderMessage>(_apiThrottle,
@@ -104,7 +104,7 @@ All branches share the same bucket — total throughput stays within limits rega
 All resilience filters compose inside parallel branches:
 
 ```csharp
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new TryCatch<OrderMessage>(
@@ -127,7 +127,7 @@ Per branch: rate limit → circuit breaker → retry (2 attempts) → 10-second 
 Limit the number of concurrent branches with `maxDegreeOfParallelism`:
 
 ```csharp
-pipeline.Add(new Parallel<BatchMessage, OrderMessage>(
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
     msg => msg.Orders,
     mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
     maxDegreeOfParallelism: 4,
@@ -165,7 +165,7 @@ pipe.Add(
     new OpenSqlConnection<ParseOrdersMessage>(msg.ConnectionString,
         new PurgeOldEventData(),
         new GetUndeliveredOrders()),
-    new Parallel<ParseOrdersMessage, UndeliveredOrder>(
+    new ParallelForEach<ParseOrdersMessage, UndeliveredOrder>(
         msg => msg.UndeliveredOrders,
         (parent, child) =>
         {

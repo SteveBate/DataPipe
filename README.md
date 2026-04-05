@@ -61,7 +61,7 @@ DataPipe includes first-class structural filters for resilience and control:
 - `OnRateLimit` for backpressure or rejection strategies
 - `IfTrue` and `Policy` for conditional behavior and dynamic routing
 - `OpenSqlConnection` and `StartTransaction` for explicit database scoping
-- `Parallel` for fan-out and concurrent execution
+- `ParallelForEach` for fan-out and concurrent execution
 
 You get robust behavior without pulling in a stack of large third-party frameworks.
 

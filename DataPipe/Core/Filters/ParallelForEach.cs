@@ -8,7 +8,7 @@ using DataPipe.Core.Telemetry;
 namespace DataPipe.Core.Filters
 {
     /// <summary>
-    /// Parallel fans out over a collection of child messages and executes child filters
+    /// ParallelForEach fans out over a collection of child messages and executes child filters
     /// concurrently for each item using <see cref="Parallel.ForEachAsync"/>.
     /// 
     /// Each child message is an independent <see cref="BaseMessage"/> instance with its own
@@ -28,7 +28,7 @@ namespace DataPipe.Core.Filters
     /// </summary>
     /// <typeparam name="TParent">The parent message type (the pipeline's message).</typeparam>
     /// <typeparam name="TChild">The child message type. Must derive from <see cref="BaseMessage"/>.</typeparam>
-    public class Parallel<TParent, TChild> : Filter<TParent>, IAmStructural
+    public class ParallelForEach<TParent, TChild> : Filter<TParent>, IAmStructural
         where TParent : BaseMessage
         where TChild : BaseMessage
     {
@@ -40,35 +40,35 @@ namespace DataPipe.Core.Filters
         private readonly Filter<TChild>[] _filters;
 
         /// <summary>
-        /// Creates a Parallel filter with default parallelism (unlimited).
+        /// Creates a ParallelForEach filter with default parallelism (unlimited).
         /// </summary>
         /// <param name="selector">Extracts the collection of child messages from the parent.</param>
         /// <param name="filters">Filters to execute concurrently for each child message.</param>
-        public Parallel(
+        public ParallelForEach(
             Func<TParent, IEnumerable<TChild>> selector,
             params Filter<TChild>[] filters)
             : this(selector, null, -1, filters) { }
 
         /// <summary>
-        /// Creates a Parallel filter with a mapper and default parallelism.
+        /// Creates a ParallelForEach filter with a mapper and default parallelism.
         /// </summary>
         /// <param name="selector">Extracts the collection of child messages from the parent.</param>
         /// <param name="mapper">Sets domain-specific properties on each child from the parent.</param>
         /// <param name="filters">Filters to execute concurrently for each child message.</param>
-        public Parallel(
+        public ParallelForEach(
             Func<TParent, IEnumerable<TChild>> selector,
             Action<TParent, TChild> mapper,
             params Filter<TChild>[] filters)
             : this(selector, mapper, -1, filters) { }
 
         /// <summary>
-        /// Creates a Parallel filter with a mapper and explicit parallelism control.
+        /// Creates a ParallelForEach filter with a mapper and explicit parallelism control.
         /// </summary>
         /// <param name="selector">Extracts the collection of child messages from the parent.</param>
         /// <param name="mapper">Sets domain-specific properties on each child from the parent. Can be null.</param>
         /// <param name="maxDegreeOfParallelism">Maximum concurrent branches. Use -1 for unlimited.</param>
         /// <param name="filters">Filters to execute concurrently for each child message.</param>
-        public Parallel(
+        public ParallelForEach(
             Func<TParent, IEnumerable<TChild>> selector,
             Action<TParent, TChild>? mapper,
             int maxDegreeOfParallelism,
@@ -110,7 +110,7 @@ namespace DataPipe.Core.Filters
                 var @start = new TelemetryEvent
                 {
                     Actor = msg.Actor,
-                    Component = nameof(Parallel<TParent, TChild>),
+                    Component = nameof(ParallelForEach<TParent, TChild>),
                     PipelineName = msg.PipelineName,
                     Service = msg.Service,
                     Scope = TelemetryScope.Filter,
@@ -166,7 +166,7 @@ namespace DataPipe.Core.Filters
                     var @end = new TelemetryEvent
                     {
                         Actor = msg.Actor,
-                        Component = nameof(Parallel<TParent, TChild>),
+                        Component = nameof(ParallelForEach<TParent, TChild>),
                         PipelineName = msg.PipelineName,
                         Service = msg.Service,
                         Scope = TelemetryScope.Filter,

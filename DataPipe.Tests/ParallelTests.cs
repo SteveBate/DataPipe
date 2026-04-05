@@ -41,7 +41,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(5);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter()));
             var msg = new TestMessage { Children = children, Service = si };
@@ -60,7 +60,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(3);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter(),
                 new IncrementChildValueFilter(),
@@ -81,7 +81,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(10);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new SlowChildFilter(50)));
             var msg = new TestMessage { Children = children, Service = si };
@@ -105,7 +105,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(3);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter()));
             var msg = new TestMessage
@@ -131,7 +131,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(3);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 (parent, child) => child.ParentConnectionString = parent.ConnectionString,
                 new IncrementChildValueFilter()));
@@ -158,7 +158,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(10);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new LambdaFilter<ChildMessage>(async child =>
                 {
@@ -188,7 +188,7 @@ namespace DataPipe.Tests
             var msg = new TestMessage { Children = children, Service = si };
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 m => m.Children,
                 new LambdaFilter<ChildMessage>(child =>
                 {
@@ -216,7 +216,7 @@ namespace DataPipe.Tests
             var msg = new TestMessage { Children = children, Service = si };
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 m => m.Children,
                 new LambdaFilter<ChildMessage>(async child =>
                 {
@@ -243,7 +243,7 @@ namespace DataPipe.Tests
             // given
             var children = CreateChildren(3);
             var sut = new DataPipe<TestMessage>();
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new FailingChildFilter()));
             var msg = new TestMessage { Children = children, Service = si };
@@ -260,7 +260,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(6);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new TryCatch<ChildMessage>(
                     tryFilters: [new FailOddChildFilter()],
@@ -291,7 +291,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(20);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new SlowChildFilter(5000)));
             var msg = new TestMessage { Children = children, Service = si, CancellationToken = cts.Token };
@@ -310,7 +310,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => null,
                 new IncrementChildValueFilter()));
             sut.Add(new IncrementingNumberFilter()); // should still run
@@ -329,7 +329,7 @@ namespace DataPipe.Tests
             // given
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter()));
             sut.Add(new IncrementingNumberFilter());
@@ -349,7 +349,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(3);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter()));
             sut.Add(new IncrementingNumberFilter());
@@ -373,7 +373,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(10);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 mapper: null,
                 maxDegreeOfParallelism: 2,
@@ -409,7 +409,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter()));
             var msg = new TestMessage
@@ -424,13 +424,13 @@ namespace DataPipe.Tests
 
             // then
             var startEvent = telemetryEvents.FirstOrDefault(e =>
-                e.Component == "Parallel" && e.Phase == TelemetryPhase.Start);
+                e.Component == "ParallelForEach" && e.Phase == TelemetryPhase.Start);
             Assert.IsNotNull(startEvent);
             Assert.AreEqual(5, startEvent.Attributes["branches"]);
             Assert.AreEqual(-1, startEvent.Attributes["max-parallelism"]);
 
             var endEvent = telemetryEvents.FirstOrDefault(e =>
-                e.Component == "Parallel" && e.Phase == TelemetryPhase.End);
+                e.Component == "ParallelForEach" && e.Phase == TelemetryPhase.End);
             Assert.IsNotNull(endEvent);
             Assert.AreEqual(5, endEvent.Attributes["branches"]);
         }
@@ -444,7 +444,7 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new IncrementChildValueFilter()));
             var msg = new TestMessage
@@ -472,7 +472,7 @@ namespace DataPipe.Tests
             var children = CreateChildren(3);
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
-            sut.Add(new Parallel<TestMessage, ChildMessage>(
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
                 msg => msg.Children,
                 new FailingChildFilter()));
             var msg = new TestMessage { Children = children, Service = si };
