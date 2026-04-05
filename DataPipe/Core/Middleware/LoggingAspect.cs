@@ -46,14 +46,17 @@ namespace DataPipe.Core.Middleware
 
             if (_logger.IsEnabled(_startEndLevel) || _logger.IsEnabled(LogLevel.Error))
             {
-                scope =
-                [
-                    new KeyValuePair<string, object>("Environment", _env),
-                    new KeyValuePair<string, object>("PipelineName", msg.PipelineName),
-                    new KeyValuePair<string, object>("CorrelationId", msg.CorrelationId),
-                    new KeyValuePair<string, object>("Tag", msg.Tag),
-                    new KeyValuePair<string, object>("IsTelemetry", false)
-                ];
+                var scopedValues = new List<KeyValuePair<string, object>>();
+
+                AddScopeValueIfPresent(scopedValues, "Environment", _env);
+                AddScopeValueIfPresent(scopedValues, "PipelineName", msg.PipelineName);
+                AddScopeValueIfPresent(scopedValues, "CorrelationId", msg.CorrelationId);
+                AddScopeValueIfPresent(scopedValues, "Tag", msg.Tag);
+
+                // Keep this marker for downstream telemetry filtering.
+                scopedValues.Add(new KeyValuePair<string, object>("IsTelemetry", false));
+
+                scope = scopedValues;
             }
 
             Action<string>? handler = null;
@@ -104,6 +107,21 @@ namespace DataPipe.Core.Middleware
         }
 
         public Aspect<T> Next { get; set; } = default!;
+
+        private static void AddScopeValueIfPresent(List<KeyValuePair<string, object>> scope, string key, object? value)
+        {
+            if (value == null)
+            {
+                return;
+            }
+
+            if (value is string textValue && string.IsNullOrWhiteSpace(textValue))
+            {
+                return;
+            }
+
+            scope.Add(new KeyValuePair<string, object>(key, value));
+        }
 
         private void WriteToLog(string message, LogLevel level, IEnumerable<KeyValuePair<string, object>>? scope)
         {
