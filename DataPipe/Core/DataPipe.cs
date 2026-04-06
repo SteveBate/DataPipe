@@ -83,6 +83,12 @@ namespace DataPipe.Core
         /// Finally registers filters that must run even when an error occurs
         public void Finally(Filter<T> filter) => _finallyFilters.Add(filter);
 
+        // Syntacic sugar to register a filter from a lambda
+        public void Finally(Func<T, Task> action)
+        {
+            _finallyFilters.Add(new LambdaFilter<T>(action));
+        }
+
         /// <summary>
         /// Invoke kicks off the unit of work including all registered aspects
         /// </summary>
