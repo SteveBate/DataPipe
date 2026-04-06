@@ -96,7 +96,7 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            msg.__Debug = "AlwaysRunFilter";
+            msg.Debug = "AlwaysRunFilter";
             return Task.CompletedTask;
         }
     }
@@ -105,7 +105,7 @@ namespace DataPipe.Tests.Support
     {
         public Task Execute(TestMessage msg)
         {
-            msg.__Debug += $"{msg.Instance} ";
+            msg.Debug += $"{msg.Instance} ";
             return Task.CompletedTask;
         }
     }
@@ -115,7 +115,7 @@ namespace DataPipe.Tests.Support
         public Task Execute(TestMessage msg)
         {
             msg.Number += 1;
-            msg.__Debug += msg.Number.ToString();
+            msg.Debug += msg.Number.ToString();
             return Task.CompletedTask;
         }
     }
@@ -125,7 +125,7 @@ namespace DataPipe.Tests.Support
         public Task Execute(TestMessage msg)
         {
             msg.Number -= 1;
-            msg.__Debug += msg.Number.ToString();
+            msg.Debug += msg.Number.ToString();
             return Task.CompletedTask;
         }
     }

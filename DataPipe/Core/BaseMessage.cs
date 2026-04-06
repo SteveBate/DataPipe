@@ -51,7 +51,7 @@ namespace DataPipe.Core
         [JsonIgnore] public TelemetryMode TelemetryMode { get; internal set; } = TelemetryMode.Off;
 
         // Internals (for debugging)
-        internal string? __Debug { get; set; }
+        internal string? Debug { get; set; }
 
         // general purpose tag, useful for stuffing with extra info
         public string Tag { get; set; } = string.Empty;

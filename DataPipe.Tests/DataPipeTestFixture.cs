@@ -314,7 +314,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("AlwaysRunFilter", msg.__Debug);
+            Assert.AreEqual("AlwaysRunFilter", msg.Debug);
         }
 
         [TestMethod]
@@ -332,7 +332,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("AlwaysRunFilter", msg.__Debug);
+            Assert.AreEqual("AlwaysRunFilter", msg.Debug);
         }
 
         [TestMethod]
@@ -350,7 +350,73 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("AlwaysRunFilter", msg.__Debug);
+            Assert.AreEqual("AlwaysRunFilter", msg.Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_run_lambda_finally_filters_when_pipeline_succeeds()
+        {
+            // given
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
+            sut.Add(new NoOpFilter());
+            sut.Finally(msg =>
+            {
+                msg.Debug = "LambdaFinally";
+                return Task.CompletedTask;
+            });
+            var msg = new TestMessage { Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("LambdaFinally", msg.Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_run_lambda_finally_filters_when_pipeline_cancelled()
+        {
+            // given
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
+            sut.Add(new CancellingFilter());
+            sut.Finally(msg =>
+            {
+                msg.Debug = "LambdaFinally";
+                return Task.CompletedTask;
+            });
+            var msg = new TestMessage { Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("LambdaFinally", msg.Debug);
+        }
+
+        [TestMethod]
+        public async Task Should_run_lambda_finally_filters_when_pipeline_errors()
+        {
+            // given
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
+            sut.Add(new ErroringFilter());
+            sut.Finally(msg =>
+            {
+                msg.Debug = "LambdaFinally";
+                return Task.CompletedTask;
+            });
+            var msg = new TestMessage { Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual("LambdaFinally", msg.Debug);
         }
 
         [TestMethod]
@@ -374,7 +440,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("this was constructed via multiple passes of the ForEach filter", msg.__Debug.TrimEnd());
+            Assert.AreEqual("this was constructed via multiple passes of the ForEach filter", msg.Debug.TrimEnd());
         }
 
         [TestMethod]
@@ -387,7 +453,7 @@ namespace DataPipe.Tests
             sut.Add(
                 new Repeat<TestMessage>(
                     new IncrementingNumberFilter(),
-                    new IfTrue<TestMessage>(x => x.__Debug == "123",
+                    new IfTrue<TestMessage>(x => x.Debug == "123",
                         new LambdaFilter<TestMessage>(x =>
                         {
                             x.Execution.Stop();
@@ -399,7 +465,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("123", msg.__Debug.TrimEnd());
+            Assert.AreEqual("123", msg.Debug.TrimEnd());
         }
 
         [TestMethod]
@@ -418,7 +484,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("12345", msg.__Debug.TrimEnd());
+            Assert.AreEqual("12345", msg.Debug.TrimEnd());
         }
 
         [TestMethod]
@@ -1071,14 +1137,14 @@ namespace DataPipe.Tests
             var sut = new DataPipe<TestMessage>();
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Add(async msg => { msg.State.Set("name", "DataPipe"); });
-            sut.Add(async msg => { msg.__Debug = msg.State.Get<string>("name"); });
+            sut.Add(async msg => { msg.Debug = msg.State.Get<string>("name"); });
             var msg = new TestMessage();
 
             // when
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("DataPipe", msg.__Debug);
+            Assert.AreEqual("DataPipe", msg.Debug);
         }
 
         [TestMethod]
@@ -1098,7 +1164,7 @@ namespace DataPipe.Tests
                 var count = msg.State.Get<int>("count");
                 var price = msg.State.Get<decimal>("price");
                 var timestamp = msg.State.Get<DateTime>("timestamp");
-                msg.__Debug = $"{count}-{price}-{timestamp:yyyy-MM-dd}";
+                msg.Debug = $"{count}-{price}-{timestamp:yyyy-MM-dd}";
             });
             var msg = new TestMessage();
 
@@ -1106,7 +1172,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("42-19.99-2026-03-23", msg.__Debug);
+            Assert.AreEqual("42-19.99-2026-03-23", msg.Debug);
         }
 
         [TestMethod]
@@ -1133,7 +1199,7 @@ namespace DataPipe.Tests
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Add(async msg =>
             {
-                msg.__Debug = msg.State.GetOrDefault<string>("missing", "fallback");
+                msg.Debug = msg.State.GetOrDefault<string>("missing", "fallback");
             });
             var msg = new TestMessage();
 
@@ -1141,7 +1207,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("fallback", msg.__Debug);
+            Assert.AreEqual("fallback", msg.Debug);
         }
 
         [TestMethod]
@@ -1153,7 +1219,7 @@ namespace DataPipe.Tests
             sut.Add(async msg => { msg.State.Set("exists", true); });
             sut.Add(async msg =>
             {
-                msg.__Debug = $"{msg.State.Has("exists")}-{msg.State.Has("missing")}";
+                msg.Debug = $"{msg.State.Has("exists")}-{msg.State.Has("missing")}";
             });
             var msg = new TestMessage();
 
@@ -1161,7 +1227,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("True-False", msg.__Debug);
+            Assert.AreEqual("True-False", msg.Debug);
         }
 
         [TestMethod]
@@ -1174,7 +1240,7 @@ namespace DataPipe.Tests
             {
                 msg.State.Set("temp", "value");
                 msg.State.Remove("temp");
-                msg.__Debug = msg.State.Has("temp").ToString();
+                msg.Debug = msg.State.Has("temp").ToString();
             });
             var msg = new TestMessage();
 
@@ -1182,7 +1248,7 @@ namespace DataPipe.Tests
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("False", msg.__Debug);
+            Assert.AreEqual("False", msg.Debug);
         }
 
         [TestMethod]
@@ -1193,14 +1259,14 @@ namespace DataPipe.Tests
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Add(async msg => { msg.State.Set("val", "first"); });
             sut.Add(async msg => { msg.State.Set("val", "second"); });
-            sut.Add(async msg => { msg.__Debug = msg.State.Get<string>("val"); });
+            sut.Add(async msg => { msg.Debug = msg.State.Get<string>("val"); });
             var msg = new TestMessage();
 
             // when
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("second", msg.__Debug);
+            Assert.AreEqual("second", msg.Debug);
         }
 
         // ── OnCircuitBreak ──────────────────────────────────────────────
