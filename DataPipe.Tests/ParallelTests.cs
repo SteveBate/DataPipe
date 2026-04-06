@@ -125,6 +125,51 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
+        public async Task Should_include_child_tag_in_scope_when_logging_in_parallel()
+        {
+            // given
+            var logger = new TestLogger();
+            var children = CreateChildren(3);
+            foreach (var child in children)
+            {
+                child.Tag = $"ORDER-{child.Id}";
+            }
+
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new LoggingAspect<TestMessage>(logger, "ParallelTagScope", mode: PipeLineLogMode.Full));
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                new LambdaFilter<ChildMessage>(child =>
+                {
+                    child.OnLog?.Invoke($"CHILD-LOG: {child.Id}");
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children = children,
+                Service = si,
+                Tag = "PARENT"
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            var startEntry = logger.ScopedEntries.FirstOrDefault(e => e.Message.Contains("START: ParallelTagScope"));
+            Assert.IsTrue(startEntry.Scope.TryGetValue("Tag", out var startTag));
+            Assert.AreEqual("PARENT", startTag?.ToString());
+
+            foreach (var child in children)
+            {
+                var logEntry = logger.ScopedEntries.FirstOrDefault(e => e.Message.Contains($"CHILD-LOG: {child.Id}"));
+                Assert.IsTrue(logEntry.Scope.TryGetValue("Tag", out var childTag), $"Expected Tag scope for child {child.Id}");
+                Assert.AreEqual(child.Tag, childTag?.ToString(), $"Expected child tag for child {child.Id}");
+            }
+        }
+
+        [TestMethod]
         public async Task Should_apply_mapper_to_each_child()
         {
             // given

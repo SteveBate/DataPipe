@@ -42,7 +42,8 @@ namespace DataPipe.Core.Middleware
                 ? msg.GetType().Name
                 : _title;
 
-            IEnumerable<KeyValuePair<string, object>>? scope = null;
+            IReadOnlyList<KeyValuePair<string, object>>? staticScope = null;
+            var fallbackTag = NormalizeTag(msg.Tag);
 
             if (_logger.IsEnabled(_startEndLevel) || _logger.IsEnabled(LogLevel.Error))
             {
@@ -51,25 +52,24 @@ namespace DataPipe.Core.Middleware
                 AddScopeValueIfPresent(scopedValues, "Environment", _env);
                 AddScopeValueIfPresent(scopedValues, "PipelineName", msg.PipelineName);
                 AddScopeValueIfPresent(scopedValues, "CorrelationId", msg.CorrelationId);
-                AddScopeValueIfPresent(scopedValues, "Tag", msg.Tag);
 
                 // Keep this marker for downstream telemetry filtering.
                 scopedValues.Add(new KeyValuePair<string, object>("IsTelemetry", false));
 
-                scope = scopedValues;
+                staticScope = scopedValues;
             }
 
             Action<string>? handler = null;
 
             if (_mode == PipeLineLogMode.Full)
             {
-                handler = m => WriteToLog(m, _startEndLevel, scope);
+                handler = m => WriteToLog(m, _startEndLevel, staticScope, fallbackTag, DataPipe.Core.LogContext.CurrentTag);
                 msg.OnLog += handler;
             }
 
             if (_mode != PipeLineLogMode.ErrorsOnly)
             {
-                WriteToLog($"START: {titleToUse}", _startEndLevel, scope);
+                WriteToLog($"START: {titleToUse}", _startEndLevel, staticScope, fallbackTag);
             }
 
             try
@@ -78,7 +78,7 @@ namespace DataPipe.Core.Middleware
                 {
                     if (_mode != PipeLineLogMode.ErrorsOnly)
                     {
-                        WriteToLog("No next aspect configured.", _startEndLevel, scope);
+                        WriteToLog("No next aspect configured.", _startEndLevel, staticScope, fallbackTag);
                     }
                     return;
                 }
@@ -87,7 +87,7 @@ namespace DataPipe.Core.Middleware
             }
             catch (Exception ex)
             {
-                WriteToErrorLog(msg, ex, scope);
+                WriteToErrorLog(msg, ex, staticScope, fallbackTag, DataPipe.Core.LogContext.CurrentTag);
                 throw;
             }
             finally
@@ -101,7 +101,7 @@ namespace DataPipe.Core.Middleware
 
                 if (_mode != PipeLineLogMode.ErrorsOnly)
                 {
-                    WriteToLog($"END: {titleToUse}", _startEndLevel, scope);
+                    WriteToLog($"END: {titleToUse}", _startEndLevel, staticScope, fallbackTag);
                 }
             }
         }
@@ -123,10 +123,16 @@ namespace DataPipe.Core.Middleware
             scope.Add(new KeyValuePair<string, object>(key, value));
         }
 
-        private void WriteToLog(string message, LogLevel level, IEnumerable<KeyValuePair<string, object>>? scope)
+        private void WriteToLog(
+            string message,
+            LogLevel level,
+            IReadOnlyList<KeyValuePair<string, object>>? staticScope,
+            string? fallbackTag,
+            string? overrideTag = null)
         {
             if (!_logger.IsEnabled(level)) return;
 
+            var scope = BuildScope(staticScope, fallbackTag, overrideTag);
             if (scope == null)
             {
                 _logger.Log(level, "{Message}", message);
@@ -139,9 +145,15 @@ namespace DataPipe.Core.Middleware
             }
         }
 
-        private void WriteToErrorLog(T msg, Exception ex, IEnumerable<KeyValuePair<string, object>>? scope)
+        private void WriteToErrorLog(
+            T msg,
+            Exception ex,
+            IReadOnlyList<KeyValuePair<string, object>>? staticScope,
+            string? fallbackTag,
+            string? overrideTag = null)
         {
             // Always attempt to log errors; WriteToErrorLog is called when an exception occurs.
+            var scope = BuildScope(staticScope, fallbackTag, overrideTag);
             if (scope == null)
             {
                 _logger.LogError(ex, "Unhandled exception in pipeline {PipelineName}", msg.PipelineName);
@@ -152,6 +164,47 @@ namespace DataPipe.Core.Middleware
             {
                 _logger.LogError(ex, "Unhandled exception in pipeline {PipelineName}", msg.PipelineName);
             }
+        }
+
+        private static IReadOnlyList<KeyValuePair<string, object>>? BuildScope(
+            IReadOnlyList<KeyValuePair<string, object>>? staticScope,
+            string? fallbackTag,
+            string? overrideTag)
+        {
+            var tagToUse = ResolveTag(overrideTag, fallbackTag);
+            if (staticScope == null)
+            {
+                if (tagToUse == null)
+                {
+                    return null;
+                }
+
+                return new List<KeyValuePair<string, object>>
+                {
+                    new KeyValuePair<string, object>("Tag", tagToUse)
+                };
+            }
+
+            if (tagToUse == null)
+            {
+                return staticScope;
+            }
+
+            var merged = new List<KeyValuePair<string, object>>(staticScope.Count + 1);
+            merged.AddRange(staticScope);
+            merged.Add(new KeyValuePair<string, object>("Tag", tagToUse));
+            return merged;
+        }
+
+        private static string? ResolveTag(string? overrideTag, string? fallbackTag)
+        {
+            var normalizedOverride = NormalizeTag(overrideTag);
+            return normalizedOverride ?? NormalizeTag(fallbackTag);
+        }
+
+        private static string? NormalizeTag(string? tag)
+        {
+            return string.IsNullOrWhiteSpace(tag) ? null : tag;
         }
     }
 }

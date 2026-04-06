@@ -138,7 +138,19 @@ namespace DataPipe.Core.Filters
                     child.Service = msg.Service;
                     child.Actor = msg.Actor;
                     child.OnError = msg.OnError;
-                    child.OnLog = msg.OnLog;
+                    var parentOnLog = msg.OnLog;
+                    child.OnLog = line =>
+                    {
+                        if (parentOnLog == null)
+                        {
+                            return;
+                        }
+
+                        using (DataPipe.Core.LogContext.PushTag(child.Tag))
+                        {
+                            parentOnLog.Invoke(line);
+                        }
+                    };
                     child.OnStart = msg.OnStart;
                     child.OnSuccess = msg.OnSuccess;
                     child.OnComplete = msg.OnComplete;
