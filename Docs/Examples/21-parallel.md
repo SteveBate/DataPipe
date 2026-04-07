@@ -190,23 +190,20 @@ pipe.Add(
 
     // process undelivered orders sequentially with ForEach
     new ForEach<ParseOrdersMessage, UndeliveredOrder>(msg => msg.UndeliveredOrders,
-        (parent, child) =>
-        {
-            child.ConnectionString = parent.ConnectionString;
-            child.Commit = parent.Commit;
-        },
+        (parent, child) => { child.Commit = parent.Commit; },
         new TryCatch<UndeliveredOrder>(
             tryFilters: [
                 new OnRateLimit<UndeliveredOrder>(
                     state: rateLimiter, 
                     capacity: 20, 
                     leakInterval: TimeSpan.FromMilliseconds(250),
-                    new OpenSqlConnection<UndeliveredOrder>(child.ConnectionString,
-                        new LoadEvents(),
-                        new ParseEvents(),
-                        new IfTrue<UndeliveredOrder>(o => o.Commit,
-                            new UpdateCarreirReporting(),
-                            new UpdateDeliveredOrdersTable())))
+                    new StartTransaction<UndeliveredOrder>(                                
+                        new OpenSqlConnection<UndeliveredOrder>(msg.ConnectionString,
+                            new LoadEvents(),
+                            new ParseEvents(),
+                            new IfTrue<UndeliveredOrder>(o => o.Commit,
+                                new UpdateCarrierReporting(),
+                                new UpdateDeliveredOrdersTable()))))
             ],
             catchFilters: [new LogOrderError()]
         )));
@@ -224,23 +221,20 @@ pipe.Add(
 
     // simply rename ForEach to ParallelForEach to switch to concurrent processing
     new ParallelForEach<ParseOrdersMessage, UndeliveredOrder>(msg => msg.UndeliveredOrders,
-        (parent, child) =>
-        {
-            child.ConnectionString = parent.ConnectionString;
-            child.Commit = parent.Commit;
-        },
+        (parent, child) => { child.Commit = parent.Commit; },
         new TryCatch<UndeliveredOrder>(
             tryFilters: [
                 new OnRateLimit<UndeliveredOrder>(
                     state: rateLimiter, 
                     capacity: 20, 
                     leakInterval: TimeSpan.FromMilliseconds(250),
-                    new OpenSqlConnection<UndeliveredOrder>(child.ConnectionString,
-                        new LoadEvents(),
-                        new ParseEvents(),
-                        new IfTrue<UndeliveredOrder>(o => o.Commit,
-                            new UpdateCarreirReporting(),
-                            new UpdateDeliveredOrdersTable())))
+                    new StartTransaction<UndeliveredOrder>(                                
+                        new OpenSqlConnection<UndeliveredOrder>(msg.ConnectionString,
+                            new LoadEvents(),
+                            new ParseEvents(),
+                            new IfTrue<UndeliveredOrder>(o => o.Commit,
+                                new UpdateCarrierReporting(),
+                                new UpdateDeliveredOrdersTable()))))
             ],
             catchFilters: [new LogOrderError()]
         )));
