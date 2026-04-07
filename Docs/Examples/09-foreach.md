@@ -1,34 +1,32 @@
-# ForEach — Iterating Over Collections
+# ForEach - Sequential Fan-Out
 
-`ForEach<TMessage, TItem>` iterates over an enumerable from the message and executes child filters for each item. It is the DataPipe equivalent of a `foreach` loop.
+`ForEach<TParent, TChild>` iterates a collection of child messages and executes child filters sequentially. It is the sequential counterpart to `ParallelForEach<TParent, TChild>`.
 
 ## How it works
 
-`ForEach` takes three parameters:
+`ForEach` takes:
 
-1. **Selector** - a function that extracts the collection from the message
-2. **Setter** — an action that assigns the current item onto the message for child filters to read
-3. **Filters** — one or more filters to execute per item
+1. Selector - extracts child messages from the parent
+2. Mapper (optional) - copies domain values from parent to child
+3. Filters - one or more filters to execute for each child, in sequence
 
 ```csharp
-pipeline.Add(new ForEach<OrderMessage, OrderLine>(
-    msg => msg.Lines,                          // selector: what to iterate
-    (msg, line) => msg.CurrentLine = line,      // setter: put current item on the message
-    new ValidateLineItem(),                     // filters: run for each item
+pipeline.Add(new ForEach<OrderBatchMessage, OrderLineMessage>(msg => msg.Lines,
+    (parent, child) => child.Currency = parent.Currency,
+    new ValidateLineItem(),
     new CalculateLineTotal()
 ));
 ```
 
-## Basic example — processing order lines
+## Basic example - processing order lines
 
 ```csharp
-var pipeline = new DataPipe<OrderMessage>();
+var pipeline = new DataPipe<OrderBatchMessage>();
 
 pipeline.Add(new ValidateOrderHeader());
 
-pipeline.Add(new ForEach<OrderMessage, OrderLine>(
-    msg => msg.Lines,
-    (msg, line) => msg.CurrentLine = line,
+pipeline.Add(new ForEach<OrderBatchMessage, OrderLineMessage>(msg => msg.Lines,
+    (parent, child) => child.Currency = parent.Currency,
     new ValidateLineItem(),
     new ApplyLineDiscount(),
     new CalculateLineTotal()
@@ -40,96 +38,86 @@ pipeline.Add(new SaveOrder());
 await pipeline.Invoke(msg);
 ```
 
-Each line flows through the same filters in sequence. After the loop completes, execution continues with `CalculateOrderTotal`.
+Each child line message flows through the same child filters sequentially. After the loop completes, pipeline execution continues.
 
 ## Message design for ForEach
 
-The message needs a property for the collection and a property for the current item:
+The parent holds the collection, and each child is a `BaseMessage` type:
 
 ```csharp
-public class OrderMessage : AppContext<OrderResult>
+public class OrderBatchMessage : AppContext<OrderResult>
 {
-    // Input: the collection to iterate
-    public List<OrderLine> Lines { get; set; } = new();
+    public List<OrderLineMessage> Lines { get; set; } = new();
+    public string Currency { get; set; } = "GBP";
+}
 
-    // Internal: set by ForEach on each iteration
-    internal OrderLine CurrentLine { get; set; }
+public class OrderLineMessage : BaseMessage
+{
+    public string ProductId { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public string Currency { get; set; } = string.Empty;
 }
 ```
 
-Child filters read `msg.CurrentLine` to access the current item:
+Child filters run against `OrderLineMessage` directly:
 
 ```csharp
-public class ValidateLineItem : Filter<OrderMessage>
+public class ValidateLineItem : Filter<OrderLineMessage>
 {
-    public Task Execute(OrderMessage msg)
+    public Task Execute(OrderLineMessage msg)
     {
-        if (msg.CurrentLine.Quantity <= 0)
-            msg.Fail(400, $"Invalid quantity for product {msg.CurrentLine.ProductId}");
+        if (msg.Quantity <= 0)
+            msg.Fail(400, $"Invalid quantity for product {msg.ProductId}");
 
         return Task.CompletedTask;
     }
 }
 ```
 
-## Null-safe enumerable
+## Null-safe selector
 
-If the selector returns `null`, no filters execute and the pipeline continues:
+If selector returns `null`, no child filters run and the parent pipeline continues:
 
 ```csharp
-pipeline.Add(new ForEach<OrderMessage, OrderLine>(
-    msg => msg.Lines,   // if Lines is null, skipped entirely
-    (msg, line) => msg.CurrentLine = line,
+pipeline.Add(new ForEach<OrderBatchMessage, OrderLineMessage>(msg => msg.Lines,
     new ProcessLine()
 ));
 ```
 
 ## Stopping mid-loop
 
-`ForEach` checks `msg.ShouldStop` before each iteration. A child filter can stop the loop early:
+`ForEach` checks parent stop conditions before each child. If a child calls `Execution.Stop(...)`, `ForEach` propagates stop to the parent and exits the loop.
 
 ```csharp
-pipeline.Add(new ForEach<ImportMessage, ImportRow>(
-    msg => msg.Rows,
-    (msg, row) => msg.CurrentRow = row,
+pipeline.Add(new ForEach<ImportBatchMessage, ImportRowMessage>(msg => msg.Rows,
     new ValidateRow(),
-    new IfTrue<ImportMessage>(msg => !msg.IsSuccess,
-        new LambdaFilter<ImportMessage>(msg =>
+    new IfTrue<ImportRowMessage>(row => !row.IsSuccess,
+        new LambdaFilter<ImportRowMessage>(row =>
         {
-            msg.Execution.Stop("Validation failed");
+            row.Execution.Stop("Validation failed");
             return Task.CompletedTask;
         })),
     new SaveRow()
 ));
 ```
 
-When validation fails, the loop breaks immediately. No further rows are processed.
-
 ## Combined with DelayExecution for throttled API calls
 
-When sending each item to an external API with rate limits:
-
 ```csharp
-pipeline.Add(new ForEach<SyncMessage, ProductUpdate>(
-    msg => msg.Updates,
-    (msg, update) => msg.CurrentUpdate = update,
-    new DelayExecution<SyncMessage>(TimeSpan.FromMilliseconds(200)),
+pipeline.Add(new ForEach<SyncBatchMessage, ProductUpdateMessage>(msg => msg.Updates,
+    new DelayExecution<ProductUpdateMessage>(TimeSpan.FromMilliseconds(200)),
     new PushUpdateToApi(),
     new MarkUpdateSynced()
 ));
 ```
 
-A 200ms pause before each API call keeps the request rate manageable.
-
 ## Combined with retry
 
-Wrap the API call in retry so a single item failure doesn't stop the batch:
-
 ```csharp
-pipeline.Add(new ForEach<SyncMessage, ProductUpdate>(
-    msg => msg.Updates,
-    (msg, update) => msg.CurrentUpdate = update,
-    new OnTimeoutRetry<SyncMessage>(maxRetries: 2,
+pipeline.Add(new ForEach<SyncBatchMessage, ProductUpdateMessage>(msg => msg.Updates,
+    new OnTimeoutRetry<ProductUpdateMessage>(maxRetries: 2,
         new PushUpdateToApi()),
     new MarkUpdateSynced()
 ));
@@ -137,17 +125,33 @@ pipeline.Add(new ForEach<SyncMessage, ProductUpdate>(
 
 ## Combined with TryCatch for per-item error handling
 
-Process every item even if some fail, collecting errors along the way:
-
 ```csharp
-pipeline.Add(new ForEach<ImportMessage, ImportRow>(
-    msg => msg.Rows,
-    (msg, row) => msg.CurrentRow = row,
-    new TryCatch<ImportMessage>(
+pipeline.Add(new ForEach<ImportBatchMessage, ImportRowMessage>(msg => msg.Rows,
+    new TryCatch<ImportRowMessage>(
         tryFilters: [new ProcessRow()],
         catchFilters: [new RecordRowError()]
     )
 ));
 ```
 
-Each row gets its own try/catch scope. Failed rows are recorded; processing continues with the next row.
+Each row message gets its own try/catch scope. Failed rows are recorded, and processing continues.
+
+## Switching to parallel in one line
+
+You can easily switch from sequential to parallel fan-out by changing only the filter type:
+
+```csharp
+// Sequential
+new ForEach<OrderBatchMessage, OrderLineMessage>(msg => msg.Lines,
+    (parent, child) => child.Currency = parent.Currency,
+    new ValidateLineItem(),
+    new CalculateLineTotal())
+
+// Parallel
+new ParallelForEach<OrderBatchMessage, OrderLineMessage>(msg => msg.Lines,
+    (parent, child) => child.Currency = parent.Currency,
+    new ValidateLineItem(),
+    new CalculateLineTotal())
+```
+
+Optionally add `maxDegreeOfParallelism` on the parallel version when you need to cap concurrent work.

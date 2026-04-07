@@ -61,6 +61,7 @@ DataPipe includes first-class structural filters for resilience and control:
 - `OnRateLimit` for backpressure or rejection strategies
 - `IfTrue` and `Policy` for conditional behavior and dynamic routing
 - `OpenSqlConnection` and `StartTransaction` for explicit database scoping
+- `ForEach` for sequential processing over child messages
 - `ParallelForEach` for fan-out and concurrent execution
 
 You get robust behavior without pulling in a stack of large third-party frameworks.
@@ -413,6 +414,36 @@ pipe.Add(
 ```
 
 This is where DataPipe shines: behavior grows by composition, not by invasive rewrites.
+
+---
+
+## 9. Need to process a collection? Add `ForEach` or `ParallelForEach`
+
+To really drive home the power of composition in DataPipe, let's say we need to process a collection of child messages in the middle of our flow. You could do it sequentially with `ForEach<TParent, TChild>` like so:
+
+```csharp
+pipe.Add(
+    new ForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
+        mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
+        new ValidateOrder(),
+        new ProcessOrder(),
+        new SaveOrderResult()
+));
+```
+
+But what if we want to process those child messages in parallel? No problem. Doing this in a traditional architecture would require a significant rewrite and the introduction of a new framework or library. With DataPipe, it's just one simple change:
+
+```csharp
+pipe.Add(
+    new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
+        mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
+        new ValidateOrder(),
+        new ProcessOrder(),
+        new SaveOrderResult()
+));
+```
+
+Here we have simply renamed `ForEach` to `ParallelForEach` and everything else remains the same. The child messages will now be processed concurrently, and the parent pipeline will wait for all of them to complete before moving on! This is a powerful example of how DataPipe's composable design allows you to evolve your behavior with minimal changes to your codebase. You can of course combine with other filters as needed, and even add resilience patterns like try/catch, rate limits, retries or circuit breakers at the child level if desired.
 
 ---
 

@@ -423,24 +423,27 @@ namespace DataPipe.Tests
         public async Task Should_run_message_through_filter_block_multiple_times_with_ForEach_Filter()
         {
             // given
+            var children = Enumerable.Range(1, 10)
+                .Select(i => new ChildMessage { Id = i, Value = 0 })
+                .ToList();
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
 
-            // Each word flows through the same filter instance via the message
+            // Each child flows through the same filter instance sequentially.
             sut.Add(
-                new ForEach<TestMessage, string>(
-                    msg => msg.Words,
-                    (msg, s) => msg.Instance = s, new ConcatenatingFilter()
+                new ForEach<TestMessage, ChildMessage>(
+                    msg => msg.Children,
+                    new IncrementChildValueFilter()
                 )
             );
-            var msg = new TestMessage { Words = ["this", "was", "constructed", "via", "multiple", "passes", "of", "the", "ForEach", "filter"], Service = si };
+            var msg = new TestMessage { Children = children, Service = si };
 
             // when
             await sut.Invoke(msg);
 
             // then
-            Assert.AreEqual("this was constructed via multiple passes of the ForEach filter", msg.Debug.TrimEnd());
+            Assert.IsTrue(children.All(c => c.Value == 1));
         }
 
         [TestMethod]
@@ -892,21 +895,27 @@ namespace DataPipe.Tests
         {
             // given
             var telemetryEvents = new List<TelemetryEvent>();
+            var children = new List<ChildMessage>
+            {
+                new() { Id = 1, Value = 0 },
+                new() { Id = 2, Value = 0 },
+                new() { Id = 3, Value = 0 }
+            };
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Add(
-                new ForEach<TestMessage, string>(
-                    msg => msg.Words,
-                    (msg, s) => msg.Instance = s,
-                    new IncrementingNumberFilter()));
-            var msg = new TestMessage { Words = ["one", "two", "three"], OnTelemetry = (e) => telemetryEvents.Add(e), Service = si };
+                new ForEach<TestMessage, ChildMessage>(
+                    msg => msg.Children,
+                    new IncrementChildValueFilter()));
+            var msg = new TestMessage { Children = children, OnTelemetry = (e) => telemetryEvents.Add(e), Service = si };
 
             // when
             await sut.Invoke(msg);
 
             // then
-            var filterEvents = telemetryEvents.FindAll(e => e.Scope == TelemetryScope.Filter);
-            Assert.IsTrue(filterEvents.Count >= 6, "expected 6 events - 3 iterations × 2 events (start+end) per filter");
+            var childFilterEvents = telemetryEvents.FindAll(e =>
+                e.Component == "IncrementChildValueFilter" && e.Scope == TelemetryScope.Filter);
+            Assert.AreEqual(6, childFilterEvents.Count, "expected 6 events - 3 iterations × 2 events (start+end) for child filter");
         }
 
         [TestMethod]
@@ -1982,24 +1991,30 @@ namespace DataPipe.Tests
         [TestMethod]
         public async Task Should_stop_mid_collection_in_ForEach()
         {
-            // given — 4 words, stop after first
+            // given — 4 children, stop after first
             var adapter = new TestTelemetryAdapter();
+            var children = new List<ChildMessage>
+            {
+                new() { Id = 1, Value = 0 },
+                new() { Id = 2, Value = 0 },
+                new() { Id = 3, Value = 0 },
+                new() { Id = 4, Value = 0 }
+            };
             var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters };
             sut.Use(new ExceptionAspect<TestMessage>());
             sut.Use(new TelemetryAspect<TestMessage>(adapter));
-            sut.Add(new ForEach<TestMessage, string>(
-                msg => msg.Words,
-                (msg, word) => msg.Instance = word,
-                new CancellingFilter()));  // stops on first item
-            var msg = new TestMessage { Words = new[] { "a", "b", "c", "d" }, Service = si };
+            sut.Add(new ForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                new StopChildFilter()));  // stops on first item
+            var msg = new TestMessage { Children = children, Service = si };
 
             // when
             await sut.Invoke(msg);
 
-            // then — pipeline stopped, only one CancellingFilter telemetry event
+            // then — pipeline stopped, only one StopChildFilter telemetry event
             Assert.IsTrue(msg.Execution.IsStopped);
             var cancelEvents = adapter.Events
-                .Where(e => e.Component == "CancellingFilter" && e.Phase == TelemetryPhase.End)
+                .Where(e => e.Component == "StopChildFilter" && e.Phase == TelemetryPhase.End)
                 .ToList();
             Assert.AreEqual(1, cancelEvents.Count, "Should only execute filter for first item");
         }

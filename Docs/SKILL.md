@@ -923,18 +923,20 @@ pipeline.Add(new Repeat<QueueMessage>(
 
 `Execution.Reset()` clears the stopped state between loop iterations so `Stop()` can be used for loop control without permanently halting the pipeline.
 
-### 6.9 ForEach\<TMessage, TItem\> — Iterate Over Collection
+### 6.9 ForEach\<TParent, TChild\> — Sequential Processing
 
-Iterates over an enumerable, executing child filters for each item:
+Iterates over child messages sequentially, executing child filters for each one:
 
 ```csharp
-pipeline.Add(new ForEach<OrderMessage, OrderLine>(
-    msg => msg.Lines,             // selector: collection to iterate
-    (msg, item) => msg.CurrentLine = item,  // setter: assign current item to message
+pipeline.Add(new ForEach<OrderBatchMessage, OrderLineMessage>(
+    msg => msg.Lines,
+    (parent, child) => child.Currency = parent.Currency,
     new ValidateLineItem(),
     new CalculateLineTotal()
 ));
 ```
+
+`ForEach` shares the same selector/mapper/filters shape as `ParallelForEach`, making migration to concurrent fan-out a one-line type rename.
 
 ### 6.10 OpenSqlConnection\<T\> — Scoped SQL Connection
 
@@ -1095,6 +1097,8 @@ pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
 ```
 
 **Key:** All child filters must be stateless and thread-safe. `OnLog`/`OnTelemetry` handlers must be thread-safe (logging frameworks and telemetry sinks already are). Without `TryCatch`, a single branch failure cancels all remaining branches. Resilience filters (`OnRateLimit`, `OnCircuitBreak`, `OnTimeoutRetry`) compose naturally inside branches — shared state objects like `RateLimiterState` and `CircuitBreakerState` are thread-safe by design.
+
+**Migration tip:** Start with sequential `ForEach<TParent, TChild>` and switch to `ParallelForEach<TParent, TChild>` by renaming only the filter type. Keep selector, mapper, and child filters unchanged; add `maxDegreeOfParallelism` only if needed.
 
 ### 6.17 Standard Nesting Convention
 
@@ -2371,7 +2375,8 @@ Pipeline.Invoke(msg)
 | `DelayExecution<T>(delay, filters...)` | `BaseMessage` | Delay before execution |
 | `RepeatUntil<T>(predicate, filters...)` | `BaseMessage` | Loop until predicate true |
 | `Repeat<T>(filters...)` | `BaseMessage` | Infinite loop (break via Stop) |
-| `ForEach<TMsg, TItem>(selector, setter, filters...)` | `BaseMessage` | Iterate collection |
+| `ForEach<TParent, TChild>(selector, mapper?, filters...)` | `BaseMessage` | Sequential fan-out over child messages |
+| `ParallelForEach<TParent, TChild>(selector, mapper?, maxDegreeOfParallelism?, filters...)` | `BaseMessage` | Concurrent fan-out over child messages |
 | `TryCatch<T>(tryFilters..., catchFilters...)` | `BaseMessage` | Exception handling with separate branches |
 
 ### Filters (DataPipe.Sql)

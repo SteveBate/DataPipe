@@ -1,14 +1,16 @@
 # Parallel — Concurrent Fan-Out
 
-`ParallelForEach<TParent, TChild>` fans out over a collection of child messages and executes filters concurrently for each one. It is the concurrent counterpart to `ForEach` — where `ForEach` processes items sequentially on the same message, `ParallelForEach` processes independent child messages concurrently.
+`ParallelForEach<TParent, TChild>` fans out over a collection of child messages and executes filters concurrently for each one. It is the concurrent counterpart to `ForEach<TParent, TChild>`, which uses the same shape but executes sequentially.
 
 ## When to use ParallelForEach vs ForEach
 
 | | ForEach | ParallelForEach |
 |---|---|---|
-| **Items** | Properties of a single message | Independent `BaseMessage` instances |
+| **Items** | Independent `BaseMessage` instances | Independent `BaseMessage` instances |
 | **Execution** | Sequential | Concurrent |
-| **State isolation** | Shared (same message) | Fully isolated (separate messages) |
+| **State isolation** | Fully isolated (separate child messages) | Fully isolated (separate child messages) |
+| **Mapper** | Optional | Optional |
+| **Parallelism cap** | Not applicable | `maxDegreeOfParallelism` |
 | **Use case** | Process order lines | Process multiple orders |
 
 ## How it works
@@ -20,6 +22,8 @@
 3. **MaxDegreeOfParallelism** (optional) — limits concurrent branches (default: unlimited)
 4. **Filters** — the filter chain to execute per branch
 
+All arguments except `maxDegreeOfParallelism` match `ForEach<TParent, TChild>`.
+
 Infrastructure properties are copied automatically to each child: lifecycle callbacks (`OnError`, `OnLog`, `OnTelemetry`, etc.), `CancellationToken`, `TelemetryMode`, `Service`, `Actor`, and `PipelineName`.
 
 ## Basic usage
@@ -29,8 +33,7 @@ var pipeline = new DataPipe<BatchMessage>();
 
 pipeline.Add(
     new LoadUnprocessedOrders(),
-    new ParallelForEach<BatchMessage, OrderMessage>(
-        msg => msg.Orders,
+    new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
         (parent, child) => child.ConnectionString = parent.ConnectionString,
         new ValidateOrder(),
         new ProcessOrder(),
@@ -65,8 +68,7 @@ public class OrderMessage : BaseMessage
 Without error handling, a single branch failure cancels all remaining branches. Wrap branch filters in `TryCatch` for independent error handling:
 
 ```csharp
-pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
-    msg => msg.Orders,
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new TryCatch<OrderMessage>(
         tryFilters: [
@@ -86,8 +88,7 @@ Failed orders are recorded; other orders continue processing.
 ```csharp
 private static readonly RateLimiterState _apiThrottle = new();
 
-pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
-    msg => msg.Orders,
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new OnRateLimit<OrderMessage>(_apiThrottle,
         capacity: 20,
@@ -104,8 +105,7 @@ All branches share the same bucket — total throughput stays within limits rega
 All resilience filters compose inside parallel branches:
 
 ```csharp
-pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
-    msg => msg.Orders,
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
     (parent, child) => child.ConnectionString = parent.ConnectionString,
     new TryCatch<OrderMessage>(
         tryFilters: [
@@ -127,8 +127,7 @@ Per branch: rate limit → circuit breaker → retry (2 attempts) → 10-second 
 Limit the number of concurrent branches with `maxDegreeOfParallelism`:
 
 ```csharp
-pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
-    msg => msg.Orders,
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
     mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
     maxDegreeOfParallelism: 4,
     new ProcessOrder()
@@ -137,26 +136,49 @@ pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
 
 Useful when each branch opens a database connection or consumes significant resources.
 
-## Real-world example — carrier integration
+## Fast migration from sequential to parallel
 
-Before (nested pipeline inside a custom filter):
+Easily go from sequential processing to parallel by changing only the filter type:
 
 ```csharp
-// Hidden inside ProcessOrdersInParallel filter
-public class ProcessOrdersInParallel : Filter<ParseOrdersMessage>
-{
-    public async Task Execute(ParseOrdersMessage msg)
-    {
-        var orderPipe = new DataPipe<UndeliveredOrder>();
-        orderPipe.Use(new ExceptionAspect<UndeliveredOrder>());
-        orderPipe.Add(new OnRateLimit<UndeliveredOrder>(...));
-        
-        await Parallel.ForEachAsync(msg.UndeliveredOrders, ...);
-    }
-}
+
+Start with sequential processing:
+
+```csharp
+pipeline.Add(new ForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
+    (parent, child) => child.ConnectionString = parent.ConnectionString,
+    new ValidateOrder(),
+    new ProcessOrder(),
+    new SaveResult()
+));
 ```
 
-After (declarative in the pipeline):
+Switch to parallel processing by renaming only the filter type:
+
+```csharp
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
+    (parent, child) => child.ConnectionString = parent.ConnectionString,
+    new ValidateOrder(),
+    new ProcessOrder(),
+    new SaveResult()
+));
+```
+
+Then optionally add `maxDegreeOfParallelism` when needed:
+
+```csharp
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(msg => msg.Orders,
+    mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
+    maxDegreeOfParallelism: 4,
+    new ValidateOrder(),
+    new ProcessOrder(),
+    new SaveResult()
+));
+```
+
+## Real-world example — Processing tracking data from a carrier
+
+Before:
 
 ```csharp
 pipe.Add(
@@ -165,8 +187,9 @@ pipe.Add(
     new OpenSqlConnection<ParseOrdersMessage>(msg.ConnectionString,
         new PurgeOldEventData(),
         new GetUndeliveredOrders()),
-    new ParallelForEach<ParseOrdersMessage, UndeliveredOrder>(
-        msg => msg.UndeliveredOrders,
+
+    // process undelivered orders sequentially with ForEach
+    new ForEach<ParseOrdersMessage, UndeliveredOrder>(msg => msg.UndeliveredOrders,
         (parent, child) =>
         {
             child.ConnectionString = parent.ConnectionString;
@@ -174,13 +197,50 @@ pipe.Add(
         },
         new TryCatch<UndeliveredOrder>(
             tryFilters: [
-                new OnRateLimit<UndeliveredOrder>(rateLimiter, 20, TimeSpan.FromMilliseconds(250),
+                new OnRateLimit<UndeliveredOrder>(
+                    state: rateLimiter, 
+                    capacity: 20, 
+                    leakInterval: TimeSpan.FromMilliseconds(250),
                     new OpenSqlConnection<UndeliveredOrder>(child.ConnectionString,
                         new LoadEvents(),
                         new ParseEvents(),
                         new IfTrue<UndeliveredOrder>(o => o.Commit,
-                            new UpdateCrm(),
-                            new UpdateDeliveredOrdersInStaging())))
+                            new UpdateCarreirReporting(),
+                            new UpdateDeliveredOrdersTable())))
+            ],
+            catchFilters: [new LogOrderError()]
+        )));
+```
+
+After:
+
+```csharp
+pipe.Add(
+    new DeleteOldLogFiles(),
+    new CheckCarriersAreValid<ParseOrdersMessage>(),
+    new OpenSqlConnection<ParseOrdersMessage>(msg.ConnectionString,
+        new PurgeOldEventData(),
+        new GetUndeliveredOrders()),
+
+    // simply rename ForEach to ParallelForEach to switch to concurrent processing
+    new ParallelForEach<ParseOrdersMessage, UndeliveredOrder>(msg => msg.UndeliveredOrders,
+        (parent, child) =>
+        {
+            child.ConnectionString = parent.ConnectionString;
+            child.Commit = parent.Commit;
+        },
+        new TryCatch<UndeliveredOrder>(
+            tryFilters: [
+                new OnRateLimit<UndeliveredOrder>(
+                    state: rateLimiter, 
+                    capacity: 20, 
+                    leakInterval: TimeSpan.FromMilliseconds(250),
+                    new OpenSqlConnection<UndeliveredOrder>(child.ConnectionString,
+                        new LoadEvents(),
+                        new ParseEvents(),
+                        new IfTrue<UndeliveredOrder>(o => o.Commit,
+                            new UpdateCarreirReporting(),
+                            new UpdateDeliveredOrdersTable())))
             ],
             catchFilters: [new LogOrderError()]
         )));

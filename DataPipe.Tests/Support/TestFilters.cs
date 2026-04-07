@@ -242,4 +242,13 @@ namespace DataPipe.Tests.Support
             return Task.CompletedTask;
         }
     }
+
+    class StopChildFilter : Filter<ChildMessage>
+    {
+        public Task Execute(ChildMessage msg)
+        {
+            msg.Execution.Stop("Stop requested from child branch");
+            return Task.CompletedTask;
+        }
+    }
 }
