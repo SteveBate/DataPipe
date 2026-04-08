@@ -70,6 +70,7 @@ namespace DataPipe.Core.Filters
                 child.CancellationToken = msg.CancellationToken;
                 child.PipelineName = msg.PipelineName;
                 child.TelemetryMode = msg.TelemetryMode;
+                child.EnableTimings = msg.EnableTimings;
                 child.Service = msg.Service;
                 child.Actor = msg.Actor;
                 child.OnError = msg.OnError;

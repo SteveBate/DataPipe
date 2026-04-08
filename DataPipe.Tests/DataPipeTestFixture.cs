@@ -447,6 +447,41 @@ namespace DataPipe.Tests
         }
 
         [TestMethod]
+        public async Task Should_log_non_zero_duration_for_filters_inside_ForEach_when_timings_enabled_and_telemetry_off()
+        {
+            // given
+            var logs = new List<string>();
+            var children = Enumerable.Range(1, 3)
+                .Select(i => new ChildMessage { Id = i, Value = 0 })
+                .ToList();
+            var sut = new DataPipe<TestMessage> { EnableTimings = true };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new ForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                new SlowChildFilter(20)));
+            var msg = new TestMessage { Children = children, OnLog = log => logs.Add(log) };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            var completed = logs
+                .Where(l => l.StartsWith("COMPLETED: SlowChildFilter ", StringComparison.Ordinal))
+                .ToList();
+
+            Assert.AreEqual(children.Count, completed.Count, "Expected one completed log per child filter execution");
+
+            foreach (var entry in completed)
+            {
+                var openParen = entry.LastIndexOf('(');
+                var closeParen = entry.LastIndexOf("ms)", StringComparison.Ordinal);
+                var durationText = entry.Substring(openParen + 1, closeParen - openParen - 1);
+                Assert.IsTrue(long.TryParse(durationText, out var durationMs), $"Expected numeric duration in log: {entry}");
+                Assert.IsTrue(durationMs > 0, $"Expected duration > 0ms, actual: {durationMs}ms");
+            }
+        }
+
+        [TestMethod]
         public async Task Should_repeat_filter_execution_until_pipeline_is_explicitly_stopped_by_user()
         {
             // given
