@@ -50,6 +50,9 @@ namespace DataPipe.Core
         // Telemetry configuration
         [JsonIgnore] public TelemetryMode TelemetryMode { get; internal set; } = TelemetryMode.Off;
 
+        // Timing configuration for log durations (telemetry always enables timings regardless)
+        [JsonIgnore] public bool EnableTimings { get; internal set; }
+
         // Internals (for debugging)
         internal string? Debug { get; set; }
 

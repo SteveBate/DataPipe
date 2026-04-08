@@ -31,6 +31,36 @@ var pipeline = new DataPipe<OrderMessage>
 
 The mode is evaluated per event via `msg.ShouldEmitTelemetry(event)`. Events that don't match the current mode are silently dropped before reaching the adapter.
 
+## Timing Without Telemetry
+
+If you only need filter timing in logs, you can enable timings without emitting telemetry events.
+
+Use `EnableTimings = true` with `TelemetryMode = Off`:
+
+```csharp
+var pipeline = new DataPipe<OrderMessage>
+{
+    Name = "CreateOrder",
+    TelemetryMode = TelemetryMode.Off,
+    EnableTimings = true
+};
+```
+
+This keeps telemetry adapters inactive while still adding elapsed milliseconds to pipeline and filter completion logs.
+
+Example log output:
+
+```text
+COMPLETED: ValidateOrder (4ms)
+COMPLETED: SaveOrder (18ms)
+PIPELINE: CreateOrder - Outcome: Success (27ms)
+```
+
+Notes:
+- `EnableTimings` defaults to `false`.
+- When telemetry is enabled, timings are always captured even if `EnableTimings` is `false`.
+- If both telemetry and `EnableTimings` are off, completion logs are emitted without duration values.
+
 ## ServiceIdentity
 
 When telemetry is enabled, a `ServiceIdentity` must be set on the message. The pipeline will throw if it's missing:

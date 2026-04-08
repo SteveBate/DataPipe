@@ -2095,6 +2095,74 @@ namespace DataPipe.Tests
             Assert.IsTrue(logs.Any(l => l.Contains("STOPPED:")), "Expected a STOPPED log message");
         }
 
+        [TestMethod]
+        public async Task Should_log_non_zero_duration_for_top_level_filter_when_telemetry_is_off()
+        {
+            // given
+            var logs = new List<string>();
+            var sut = new DataPipe<TestMessage> { EnableTimings = true };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new DelayExecution<TestMessage>(TimeSpan.FromMilliseconds(30)));
+            var msg = new TestMessage { OnLog = log => logs.Add(log) };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            var completed = logs.FirstOrDefault(l => l.StartsWith("COMPLETED: DelayExecution "));
+            Assert.IsNotNull(completed, "Expected a completed log for DelayExecution");
+
+            var openParen = completed!.LastIndexOf('(');
+            var closeParen = completed.LastIndexOf("ms)", StringComparison.Ordinal);
+            var durationText = completed.Substring(openParen + 1, closeParen - openParen - 1);
+            Assert.IsTrue(long.TryParse(durationText, out var durationMs), $"Expected numeric duration in log: {completed}");
+            Assert.IsTrue(durationMs > 0, $"Expected duration > 0ms, actual: {durationMs}ms");
+        }
+
+        [TestMethod]
+        public async Task Should_log_non_zero_duration_for_structural_child_filter_when_telemetry_is_off()
+        {
+            // given
+            var logs = new List<string>();
+            var sut = new DataPipe<TestMessage> { EnableTimings = true };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new Sequence<TestMessage>(new SlowFilter(30)));
+            var msg = new TestMessage { OnLog = log => logs.Add(log) };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            var completed = logs.FirstOrDefault(l => l.StartsWith("COMPLETED: SlowFilter "));
+            Assert.IsNotNull(completed, "Expected a completed log for SlowFilter");
+
+            var openParen = completed!.LastIndexOf('(');
+            var closeParen = completed.LastIndexOf("ms)", StringComparison.Ordinal);
+            var durationText = completed.Substring(openParen + 1, closeParen - openParen - 1);
+            Assert.IsTrue(long.TryParse(durationText, out var durationMs), $"Expected numeric duration in log: {completed}");
+            Assert.IsTrue(durationMs > 0, $"Expected duration > 0ms, actual: {durationMs}ms");
+        }
+
+        [TestMethod]
+        public async Task Should_log_duration_when_telemetry_is_enabled_even_if_timings_flag_is_off()
+        {
+            // given
+            var logs = new List<string>();
+            var sut = new DataPipe<TestMessage> { TelemetryMode = TelemetryMode.PipelineAndFilters, EnableTimings = false };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(new TestTelemetryAdapter()));
+            sut.Add(new DelayExecution<TestMessage>(TimeSpan.FromMilliseconds(30)));
+            var msg = new TestMessage { OnLog = log => logs.Add(log), Service = si };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            var completed = logs.FirstOrDefault(l => l.StartsWith("COMPLETED: DelayExecution "));
+            Assert.IsNotNull(completed, "Expected a completed log for DelayExecution");
+            Assert.IsTrue(completed!.Contains("ms)"), $"Expected duration in log when telemetry is enabled: {completed}");
+        }
+
         // ── LoggingAspect mode tests ──────────────────────────────────────────────
 
         [TestMethod]

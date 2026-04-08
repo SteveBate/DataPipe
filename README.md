@@ -463,6 +463,8 @@ pipe.UseIf(env != "Development", new TelemetryAspect<RegisterCustomerMessage>(ad
 
 DataPipe does not force a vendor or cloud path. Telemetry adapters and policies let you shape what to capture and where it goes.
 
+**Note:** If you want filter and pipeline duration data in logs without enabling telemetry event emission, see [Timing Without Telemetry](Docs/Examples/18-telemetry.md#timing-without-telemetry), which explains using `EnableTimings` with `TelemetryMode.Off`.
+
 ---
 
 ## Why This Works in Real Enterprise Teams

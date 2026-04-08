@@ -21,7 +21,8 @@ internal static class FilterRunner
     {
         var reason = string.Empty;
         var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
-        Stopwatch? fsw = telemetryEnabled ? Stopwatch.StartNew() : null;
+        var timingEnabled = telemetryEnabled || msg.EnableTimings;
+        Stopwatch? fsw = timingEnabled ? Stopwatch.StartNew() : null;
 
         var selfEmitting = filter is IAmStructural structural && !structural.EmitTelemetryEvent;
         var emitStart = filter is not IAmStructural || (filter is IAmStructural s && s.EmitTelemetryEvent);
@@ -102,7 +103,10 @@ internal static class FilterRunner
                 msg.OnLog?.Invoke($"STOPPED: {msg.Execution.Reason}");
             }
 
-            msg.OnLog?.Invoke($"COMPLETED: {filter.GetType().Name.Split('`')[0]} ({fsw?.ElapsedMilliseconds ?? 0}ms)");
+            var name = filter.GetType().Name.Split('`')[0];
+            msg.OnLog?.Invoke(fsw != null
+                ? $"COMPLETED: {name} ({fsw.ElapsedMilliseconds}ms)"
+                : $"COMPLETED: {name}");
         }
 
         return true;

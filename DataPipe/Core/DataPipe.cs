@@ -58,6 +58,7 @@ namespace DataPipe.Core
 
         public string Name { get; set; } = "DataPipe";
         public TelemetryMode TelemetryMode { get; set; } = TelemetryMode.Off;
+        public bool EnableTimings { get; set; }
         public bool DebugOn { get; set; }
 
         /// Register the individual steps that make up the DataPipe
@@ -100,6 +101,9 @@ namespace DataPipe.Core
             // Set the telemetry mode on the message
             msg.TelemetryMode = TelemetryMode;
 
+            // Opt-in timing capture for logs when telemetry is off
+            msg.EnableTimings = EnableTimings;
+
             // assert the ServiceIdentity is set when telemetry is enabled and at least the Name and Environment are populated
             switch (msg.TelemetryMode)
             {
@@ -134,7 +138,8 @@ namespace DataPipe.Core
             var pipeOutcome = TelemetryOutcome.None;
             var pipeStopReason = string.Empty;
             var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
-            var psw = telemetryEnabled ? Stopwatch.StartNew() : null;
+            var timingEnabled = telemetryEnabled || msg.EnableTimings;
+            Stopwatch? psw = timingEnabled ? Stopwatch.StartNew() : null;
             if (telemetryEnabled)
             {
                 var @begin = new TelemetryEvent
@@ -163,7 +168,7 @@ namespace DataPipe.Core
                     foreach (var f in _filters)
                     {
                         var reason = string.Empty;
-                        Stopwatch? fsw = telemetryEnabled ? Stopwatch.StartNew() : null;
+                        Stopwatch? fsw = timingEnabled ? Stopwatch.StartNew() : null;
                         
                         // Check if this structural filter manages its own telemetry
                         var selfEmitting = f is IAmStructural structural && !structural.EmitTelemetryEvent;
@@ -232,7 +237,10 @@ namespace DataPipe.Core
                                 msg.Execution.ClearTelemetryAnnotations();
                                 if (msg.ShouldEmitTelemetry(@complete)) msg.OnTelemetry?.Invoke(@complete);
                             }
-                            msg.OnLog?.Invoke($"COMPLETED: {f.GetType().Name.Split('`')[0]} ({fsw?.ElapsedMilliseconds ?? 0}ms)");
+                            var name = f.GetType().Name.Split('`')[0];
+                            msg.OnLog?.Invoke(fsw != null
+                                ? $"COMPLETED: {name} ({fsw.ElapsedMilliseconds}ms)"
+                                : $"COMPLETED: {name}");
                         }
                     }
                 }
@@ -276,7 +284,9 @@ namespace DataPipe.Core
                     if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);
                 }
                 msg.OnComplete?.Invoke(msg);
-                msg.OnLog?.Invoke($"PIPELINE: {Name} - Outcome: {pipeOutcome} ({psw?.ElapsedMilliseconds ?? 0}ms)");
+                msg.OnLog?.Invoke(psw != null
+                    ? $"PIPELINE: {Name} - Outcome: {pipeOutcome} ({psw.ElapsedMilliseconds}ms)"
+                    : $"PIPELINE: {Name} - Outcome: {pipeOutcome}");
             }
         }
 
