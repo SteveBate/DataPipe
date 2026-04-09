@@ -56,8 +56,8 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
         pipe.Use(new OnErrorAspect<CreateOrderMessage>());
         pipe.Add(               
             new ValildateCreateOrderMessage(),
-            new StartTransactionScope<CreateOrderMessage>(
-                new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionStr,
+            new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionStr,
+                new StartSqlTransaction<CreateOrderMessage>(
                     new GetNextOrderNumber(),
                     new AddOrderHeader(),
                     new Policy<CreateOrderMessage>(m => m.AccountImportKind switch

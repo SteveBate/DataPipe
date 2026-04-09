@@ -15,8 +15,8 @@ public async Task ProcessOrder(Order order)
     
     // SQL transaction wraps business logic - Sequence not required as OpenSqlConnection accepts multiple filters
     pipeline.Add(
-        new StartTransactionScope<OrderMessage>(
-            new OpenSqlConnection<OrderMessage>(connectionString: "...",                
+        new OpenSqlConnection<OrderMessage>(connectionString: "...",
+            new StartSqlTransaction<OrderMessage>(
                 new CreateOrderRecord(),
                 new UpdateInventory(),
                 new RecordAuditLog()

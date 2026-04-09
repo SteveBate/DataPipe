@@ -44,8 +44,8 @@ Below is a diagram represent the Order Processing Pipeline example described in 
                                             │
                                             ▼
                                 ┌──────────────────────────────────┐
-                                │ StartTransactionScope                 │
-                                │ └─ OpenSqlConnection             │
+                                │ OpenSqlConnection                │
+                                │ └─ StartSqlTransaction           │
                                 │    └─ ProcessStandardOrder       │
                                 │    └─ AddOrderCreatedOutboxEvent │
                                 └────────-─────────────────────────┘

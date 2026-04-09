@@ -197,8 +197,8 @@ pipe.Add(
                     state: rateLimiter, 
                     capacity: 20, 
                     leakInterval: TimeSpan.FromMilliseconds(250),
-                    new StartTransactionScope<UndeliveredOrder>(                                
-                        new OpenSqlConnection<UndeliveredOrder>(msg.ConnectionString,
+                    new OpenSqlConnection<UndeliveredOrder>(msg.ConnectionString,
+                        new StartSqlTransaction<UndeliveredOrder>(                                
                             new LoadEvents(),
                             new ParseEvents(),
                             new IfTrue<UndeliveredOrder>(o => o.Commit,
@@ -228,8 +228,8 @@ pipe.Add(
                     state: rateLimiter, 
                     capacity: 20, 
                     leakInterval: TimeSpan.FromMilliseconds(250),
-                    new StartTransactionScope<UndeliveredOrder>(                                
-                        new OpenSqlConnection<UndeliveredOrder>(msg.ConnectionString,
+                    new OpenSqlConnection<UndeliveredOrder>(msg.ConnectionString,
+                        new StartSqlTransaction<UndeliveredOrder>(                                
                             new LoadEvents(),
                             new ParseEvents(),
                             new IfTrue<UndeliveredOrder>(o => o.Commit,

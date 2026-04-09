@@ -213,8 +213,10 @@ public async Task ProcessSupplierInvoice(SupplierInvoiceDto dto, ILogger logger)
     pipeline.Add(new ValidateInvoiceFormat());
     pipeline.Add(new VerifySupplierExists());
     pipeline.Add(new OnTimeoutRetry<SupplierInvoiceMessage>(maxRetries: 2,
-        new StartTransactionScope<SupplierInvoiceMessage>(
-            new SaveInvoiceToDatabase()
+        new OpenSqlConnection<SupplierInvoiceMessage>(connectionString,
+            new StartSqlTransaction<SupplierInvoiceMessage>(
+                new SaveInvoiceToDatabase()
+            )
         )
     ));
     pipeline.Add(new GenerateAcknowledgment());

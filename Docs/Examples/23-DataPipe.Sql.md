@@ -51,7 +51,9 @@ await pipe.Invoke(msg);
 Console.WriteLine("User saved with ID: " + msg.Result.Id);
 ```
 
-### Save user example (TransactionScope)
+### Save user example (TransactionScope — available but not recommended)
+
+`StartTransactionScope` uses an ambient `TransactionScope` and requires the connection to sit inside it. Reserve this for the rare case where you need to enlist multiple heterogeneous resources. Prefer `StartSqlTransaction` in all other scenarios.
 
 ```csharp
 var pipe = new DataPipe<SaveUserMessage>();
@@ -70,8 +72,8 @@ Console.WriteLine("User saved with ID: " + msg.Result.Id);
 ### The building blocks
 
 - `OpenSqlConnection<TMessage>`: Opens a Microsoft.Data.SqlClient `SqlConnection` for the duration of the filter. Filters use it via `msg.Command`.
-- `StartTransactionScope<TMessage>`: Starts a TransactionScope-based transaction. Commits if the message completes successfully and `msg.Commit` is true.
-- `StartSqlTransaction<TMessage>`: Starts a SQL transaction using `SqlConnection.BeginTransactionAsync`. Commits if the message completes successfully, rolls back on error or if `msg.Commit` is false. When combined with `OnTimeoutRetry`, nesting the retry *inside* `OpenSqlConnection` (so the connection survives across retries) is more efficient for transient errors like deadlocks that don't kill the connection.
+- `StartSqlTransaction<TMessage>` (preferred): Starts a SQL transaction using `SqlConnection.BeginTransactionAsync`. Commits if the message completes successfully, rolls back on error or if `msg.Commit` is false. Uses the connection's native transaction, avoids ambient `TransactionScope` complexity, and works reliably in async/await and cross-platform environments without risking DTC escalation. When combined with `OnTimeoutRetry`, nesting the retry *inside* `OpenSqlConnection` (so the connection survives across retries) is more efficient for transient errors like deadlocks that don't kill the connection.
+- `StartTransactionScope<TMessage>`: Starts a `TransactionScope`-based ambient transaction. Commits if the message completes successfully and `msg.Commit` is true. Reserve for cases that require enlisting multiple heterogeneous resources in a single ambient transaction.
 - `ExceptionAspect<TMessage>`: Catches exceptions thrown by downstream filters, allowing for centralized error handling and logging.
 - Custom filters (e.g., `LoadUser`, `SaveUser`): Implement your business logic using `msg.Command` with transaction management handled by structural filters.
 
