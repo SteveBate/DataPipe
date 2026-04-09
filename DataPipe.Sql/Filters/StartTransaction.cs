@@ -29,19 +29,19 @@ namespace DataPipe.Sql.Filters
     /// </para>
     /// </remarks>
     /// <typeparam name="T">The message type, constrained to inherit from BaseMessage and implement IAmCommittable</typeparam>
-    public class StartTransaction<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmCommittable
+    public class StartTransactionScope<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmCommittable
     {
         public bool EmitTelemetryEvent => false; // emit own start event rather than parent so we can capture isolation level and timeout
 
         private readonly IsolationLevel _isolationLevel;
         private readonly Filter<T>[] _filters;
         
-        public StartTransaction(params Filter<T>[] filters) 
+        public StartTransactionScope(params Filter<T>[] filters) 
             : this(IsolationLevel.ReadCommitted, filters)
         {
         }
 
-        public StartTransaction(IsolationLevel isolationLevel, params Filter<T>[] filters)
+        public StartTransactionScope(IsolationLevel isolationLevel, params Filter<T>[] filters)
         {
             _filters = filters;
             _isolationLevel = isolationLevel;
@@ -52,9 +52,12 @@ namespace DataPipe.Sql.Filters
             var options = new TransactionOptions { IsolationLevel = _isolationLevel, Timeout = TransactionManager.MaximumTimeout };
 
             // Track timing and outcome for this structural filter
-            var structuralSw = Stopwatch.StartNew();
+            var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+            var timingEnabled = telemetryEnabled || msg.EnableTimings;
+            Stopwatch? structuralSw = timingEnabled ? Stopwatch.StartNew() : null;
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
+            var committed = false;
 
             using (var scope = new TransactionScope(TransactionScopeOption.RequiresNew, options, TransactionScopeAsyncFlowOption.Enabled))
             {
@@ -71,7 +74,7 @@ namespace DataPipe.Sql.Filters
                 var @txnStart = new TelemetryEvent
                 {
                     Actor = msg.Actor,
-                    Component = nameof(StartTransaction<T>),
+                    Component = nameof(StartTransactionScope<T>),
                     PipelineName = msg.PipelineName,
                     Service = msg.Service,
                     Scope = TelemetryScope.Filter,
@@ -96,11 +99,14 @@ namespace DataPipe.Sql.Filters
 
                         if (msg.ShouldStop)
                         {
+                            structuralOutcome = TelemetryOutcome.Stopped;
+                            structuralReason = $"Transaction rolled back ({msg.Execution.Reason})";
                             msg.OnLog?.Invoke($"INFO: TRANSACTION ROLLED BACK ({msg.Execution.Reason})");
                             return;
                         }
 
                         scope.Complete();
+                        committed = true;
                         msg.OnLog?.Invoke($"INFO: TRANSACTION COMMITTED");
                     }
                     else
@@ -118,19 +124,19 @@ namespace DataPipe.Sql.Filters
                 }
                 finally
                 {
-                    structuralSw.Stop();
+                    structuralSw?.Stop();
 
                     // Build end attributes
                     var endAttributes = new Dictionary<string, object>
                     {
                         ["isolation-level"] = options.IsolationLevel.ToString(),
-                        ["committed"] = msg.Commit && structuralOutcome == TelemetryOutcome.Success
+                        ["committed"] = committed
                     };
 
                     var @txnEnd = new TelemetryEvent
                     {
                         Actor = msg.Actor,
-                        Component = nameof(StartTransaction<T>),
+                        Component = nameof(StartTransactionScope<T>),
                         PipelineName = msg.PipelineName,
                         Service = msg.Service,
                         Scope = TelemetryScope.Filter,
@@ -140,7 +146,7 @@ namespace DataPipe.Sql.Filters
                         Outcome = structuralOutcome,
                         Reason = structuralReason,
                         Timestamp = DateTimeOffset.UtcNow,
-                        DurationMs = structuralSw.ElapsedMilliseconds,
+                        DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                         Attributes = endAttributes
                     };
                     if (msg.ShouldEmitTelemetry(@txnEnd)) msg.OnTelemetry?.Invoke(@txnEnd);

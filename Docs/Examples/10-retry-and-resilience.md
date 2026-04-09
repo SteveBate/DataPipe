@@ -93,7 +93,7 @@ Retry can wrap other structural filters. A common pattern is retrying a transact
 
 ```csharp
 pipeline.Add(new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
-    new StartTransaction<OrderMessage>(
+    new StartTransactionScope<OrderMessage>(
         new OpenSqlConnection<OrderMessage>(connectionString,
             new SaveOrder(),
             new UpdateInventory()

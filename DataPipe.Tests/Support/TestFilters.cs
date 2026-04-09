@@ -189,6 +189,14 @@ namespace DataPipe.Tests.Support
         }
     }
 
+    class NoOpSqlTransactionMessageFilter : Filter<SqlTransactionTestMessage>
+    {
+        public Task Execute(SqlTransactionTestMessage msg)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
     class RecordExceptionFilter : Filter<TestMessage>
     {
         public Task Execute(TestMessage msg)

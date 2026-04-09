@@ -24,7 +24,7 @@ public async Task ProcessSupplierInvoice(SupplierInvoiceDto dto)
         return msg.RequiresManualReview
             ? new RouteToApprovalQueue()
             : new OnTimeoutRetry<SupplierInvoiceMessage>(maxRetries: 2,
-                new StartTransaction<SupplierInvoiceMessage>(
+                new StartTransactionScope<SupplierInvoiceMessage>(
                     new OpenSqlConnection<SupplierInvoiceMessage>(connectionString: "...", 
                         new CreateInvoiceRecord(),
                         new MatchToPurchaseOrder(),

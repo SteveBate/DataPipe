@@ -159,7 +159,7 @@ namespace DataPipe.Tests
             sut.Add(new OnTimeoutRetry<TestMessage>(MaxRetries,
                 null,
                 customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
-                        new StartTransaction<TestMessage>(
+                        new StartTransactionScope<TestMessage>(
                             new MockTimeoutErroringFilter())));
             var msg = new TestMessage { Service = si };
 
@@ -182,7 +182,7 @@ namespace DataPipe.Tests
                 new OnTimeoutRetry<TestMessage>(MaxRetries,
                 retryWhen: (ex, msg) => ex is HttpRequestException,
                 customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
-                    new StartTransaction<TestMessage>(
+                    new StartTransactionScope<TestMessage>(
                         new MockHttpErroringFilter())));
             var msg = new TestMessage { Service = si };
 
@@ -205,7 +205,7 @@ namespace DataPipe.Tests
                 new OnTimeoutRetry<TestMessage>(MaxRetries,
                 retryWhen: (ex, msg) => ex is HttpRequestException,
                 customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
-                    new StartTransaction<TestMessage>(
+                    new StartTransactionScope<TestMessage>(
                         new MockHttpErroringFilter())));
             var msg = new TestMessage { Service = si };
 
@@ -250,7 +250,7 @@ namespace DataPipe.Tests
             sut.Add(new OnTimeoutRetry<TestMessage>(maxRetries,
                 null,
                 customDelay: (attempt, msg) => TimeSpan.FromMilliseconds(10 * attempt),
-                        new StartTransaction<TestMessage>(
+                        new StartTransactionScope<TestMessage>(
                             new MockRecoveringTimeoutErroringFilter())));
             var msg = new TestMessage { Service = si };
 
@@ -259,6 +259,54 @@ namespace DataPipe.Tests
 
             // then
             Assert.AreEqual(2, msg.Attempt); // orignal attempt plus first retry
+        }
+
+        [TestMethod]
+        public async Task Should_fail_start_sql_transaction_when_command_not_set()
+        {
+            // given
+            var filter = new StartSqlTransaction<SqlTransactionTestMessage>(new NoOpSqlTransactionMessageFilter());
+            var msg = new SqlTransactionTestMessage { Command = null! };
+
+            // when
+            var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => filter.Execute(msg));
+
+            // then
+            Assert.IsTrue(ex.Message.Contains("requires msg.Command to be set"));
+        }
+
+        [TestMethod]
+        public async Task Should_fail_start_sql_transaction_when_command_connection_not_set()
+        {
+            // given
+            var filter = new StartSqlTransaction<SqlTransactionTestMessage>(new NoOpSqlTransactionMessageFilter());
+            var msg = new SqlTransactionTestMessage { Command = new Microsoft.Data.SqlClient.SqlCommand() };
+
+            // when
+            var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => filter.Execute(msg));
+
+            // then
+            Assert.IsTrue(ex.Message.Contains("requires msg.Command.Connection to be set"));
+        }
+
+        [TestMethod]
+        public async Task Should_fail_start_sql_transaction_when_command_connection_not_open()
+        {
+            // given
+            var filter = new StartSqlTransaction<SqlTransactionTestMessage>(new NoOpSqlTransactionMessageFilter());
+            var msg = new SqlTransactionTestMessage
+            {
+                Command = new Microsoft.Data.SqlClient.SqlCommand
+                {
+                    Connection = new Microsoft.Data.SqlClient.SqlConnection("Server=(localdb)\\MSSQLLocalDB;Database=master;Integrated Security=true;Connect Timeout=1;")
+                }
+            };
+
+            // when
+            var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => filter.Execute(msg));
+
+            // then
+            Assert.IsTrue(ex.Message.Contains("requires msg.Command.Connection to be open"));
         }
 
         [TestMethod]

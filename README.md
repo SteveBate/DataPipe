@@ -60,11 +60,16 @@ DataPipe includes first-class structural filters for resilience and control:
 - `OnCircuitBreak` for fail-fast protection when dependencies are unhealthy
 - `OnRateLimit` for backpressure or rejection strategies
 - `IfTrue` and `Policy` for conditional behavior and dynamic routing
-- `OpenSqlConnection` and `StartTransaction` for explicit database scoping
 - `ForEach` for sequential processing over child messages
 - `ParallelForEach` for fan-out and concurrent execution
 
 You get robust behavior without pulling in a stack of large third-party frameworks.
+
+DataPipe.Sql includes filters for managing SQL connections and transactions in a way that fits naturally into DataPipe pipelines. You can choose between `TransactionScope` or `SqlTransaction` approaches, and they work seamlessly with your message flows.
+
+- `OpenSqlConnection` for scoped SQL connections and commands
+- `StartTransactionScope` for explicit database scoping
+- `StartSqlTransaction` for fine-grained transaction control
 
 ---
 
@@ -186,7 +191,7 @@ pipe.Add(
 
 DataPipe is equally at home with other data access approaches including Entity Framework but is not built in to avoid package dependencies. If you prefer Entity Framework or another data access approach, model your filters around that instead. See the `Docs/Patterns` directory for examples you can drop straight in to your project.
 
-### 4. Need atomic writes? Add `StartTransaction`
+### 4. Need atomic writes? Add `StartTransactionScope` or `StartSqlTransaction`
 
 Suppose we now also need to record an audit trail when a customer is registered:
 
@@ -203,7 +208,7 @@ public sealed class InsertRegistrationAudit : Filter<RegisterCustomerMessage>
 }
 ```
 
-Two writes should succeed or fail together. `StartTransaction` provides that, and requires the message to implement `IAmCommittable`:
+Two writes should succeed or fail together. `StartTransactionScope` and `StartSqlTransaction` provide that, and require the message to implement `IAmCommittable`:
 
 ```csharp
 public sealed class RegisterCustomerMessage : BaseMessage, IUseSqlCommand, IAmCommittable
@@ -212,17 +217,32 @@ public sealed class RegisterCustomerMessage : BaseMessage, IUseSqlCommand, IAmCo
     public string Email { get; set; } = string.Empty;
     public SqlCommand Command { get; set; } = default!;
 
-    // Added for StartTransaction - controls whether the transaction commits
+    // Added for StartTransactionScope or StartSqlTransaction - controls whether the transaction commits
     public bool Commit { get; set; } = true;
 }
 ```
+
+Choose your transaction strategy and wrap the writes:
+
+1: `TransactionScope` approach (transaction comes before connection):
+```csharp
+pipe.Add(new NormalizeEmail());
+pipe.Add(new ValidateCustomerInput());
+pipe.Add(
+    new StartTransactionScope<RegisterCustomerMessage>(
+        new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+            new InsertCustomer(),
+            new InsertRegistrationAudit())));
+```
+
+2: `SqlTransaction` approach (transaction comes after connection):
 
 ```csharp
 pipe.Add(new NormalizeEmail());
 pipe.Add(new ValidateCustomerInput());
 pipe.Add(
-    new StartTransaction<RegisterCustomerMessage>(
-        new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+    new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
+        new StartSqlTransaction<RegisterCustomerMessage>(
             new InsertCustomer(),
             new InsertRegistrationAudit())));
 ```
@@ -258,7 +278,7 @@ pipe.Add(new NormalizeEmail());
 pipe.Add(new ValidateCustomerInput());
 pipe.Add(
     new OnTimeoutRetry<RegisterCustomerMessage>(maxRetries: 3,
-        new StartTransaction<RegisterCustomerMessage>(
+        new StartTransactionScope<RegisterCustomerMessage>(
             new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
                 new InsertCustomer(),
                 new InsertRegistrationAudit()))));
@@ -282,7 +302,7 @@ pipe.Add(
         failureThreshold: 5,
         breakDuration: TimeSpan.FromSeconds(30),
         new OnTimeoutRetry<RegisterCustomerMessage>(maxRetries: 3,            
-            new StartTransaction<RegisterCustomerMessage>(
+            new StartTransactionScope<RegisterCustomerMessage>(
                 new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
                     new InsertCustomer(),
                     new InsertRegistrationAudit())))));
@@ -311,7 +331,7 @@ pipe.Add(
             failureThreshold: 5,
             breakDuration: TimeSpan.FromSeconds(30),
             new OnTimeoutRetry<RegisterCustomerMessage>(maxRetries: 3,                
-                new StartTransaction<RegisterCustomerMessage>(
+                new StartTransactionScope<RegisterCustomerMessage>(
                     new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
                         new InsertCustomer(),
                         new InsertRegistrationAudit()))))));
@@ -348,7 +368,7 @@ pipe.Add(
             failureThreshold: 5,
             breakDuration: TimeSpan.FromSeconds(30),
             new OnTimeoutRetry<RegisterCustomerMessage>(3,
-                new StartTransaction<RegisterCustomerMessage>(
+                new StartTransactionScope<RegisterCustomerMessage>(
                     new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
                         new InsertCustomer(),
                         new InsertRegistrationAudit()))))));
@@ -375,7 +395,7 @@ pipe.Add(new ValidateCustomerInput());
 pipe.Add(new RequirePermission("database.modify")); <- new filter added here
 
 pipe.Add(
-    new StartTransaction<RegisterCustomerMessage>(
+    new StartTransactionScope<RegisterCustomerMessage>(
         new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
             new InsertCustomer(),
             new InsertRegistrationAudit())));
@@ -407,7 +427,7 @@ pipe.Add(
         new NormalizeEmail(),
         new ValidateCustomerInput(),
         new RequirePermission("database.modify"),        
-        new StartTransaction<RegisterCustomerMessage>(
+        new StartTransactionScope<RegisterCustomerMessage>(
             new OpenSqlConnection<RegisterCustomerMessage>(connectionString,
                 new InsertCustomer(),
                 new InsertRegistrationAudit()))));

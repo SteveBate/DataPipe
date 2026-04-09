@@ -120,7 +120,7 @@ Implement contracts on the context class to enable built-in structural filters:
 | Contract | Package | Purpose | Required Properties |
 |----------|---------|---------|-------------------|
 | `IUseSqlCommand` | DataPipe.Sql | Enables `OpenSqlConnection<T>` | `SqlCommand Command { get; set; }` |
-| `IAmCommittable` | DataPipe.Core | Enables `StartTransaction<T>` commit/rollback | `bool Commit { get; set; }` |
+| `IAmCommittable` | DataPipe.Core | Enables `StartTransactionScope<T>` and `StartSqlTransaction<T>` commit/rollback | `bool Commit { get; set; }` |
 | `IAmRetryable` | DataPipe.Core | Enables `OnTimeoutRetry<T>` | `int Attempt { get; set; }`, `int MaxRetries { get; set; }`, `Action<int> OnRetrying { get; set; }` |
 
 `OnCircuitBreak<T>` does not require a message contract. It uses an external `CircuitBreakerState` object to track circuit state, which is designed to be shared across pipeline invocations (e.g. as a DI singleton).
@@ -965,13 +965,15 @@ public async Task Execute(LoadUserMessage msg)
 }
 ```
 
-### 6.11 StartTransaction\<T\> — SQL Transaction
+### 6.11 StartTransactionScope\<T\> and StartSqlTransaction\<T\> — SQL Transactions
 
-Requires `IAmCommittable` + `IUseSqlCommand` on the message. Wraps child filters in a SQL transaction. Commits if `msg.Commit` is true and no errors; rolls back otherwise:
+Both filters require `IAmCommittable` on the message and commit only when `msg.Commit` is true and execution does not stop.
+
+Use `StartTransactionScope<T>` when you want a TransactionScope-based transaction:
 
 ```csharp
 // Default isolation level (ReadCommitted)
-pipeline.Add(new StartTransaction<OrderMessage>(
+pipeline.Add(new StartTransactionScope<OrderMessage>(
     new OpenSqlConnection<OrderMessage>(connectionString,
         new SaveOrder(),
         new UpdateInventory()
@@ -979,9 +981,20 @@ pipeline.Add(new StartTransaction<OrderMessage>(
 ));
 
 // Explicit isolation level
-pipeline.Add(new StartTransaction<OrderMessage>(IsolationLevel.Serializable,
+pipeline.Add(new StartTransactionScope<OrderMessage>(IsolationLevel.Serializable,
     new OpenSqlConnection<OrderMessage>(connectionString,
         new SaveOrder()
+    )
+));
+```
+
+Use `StartSqlTransaction<T>` when you want a local SQL transaction from `SqlConnection.BeginTransactionAsync`:
+
+```csharp
+pipeline.Add(new OpenSqlConnection<OrderMessage>(connectionString,
+    new StartSqlTransaction<OrderMessage>(IsolationLevel.ReadCommitted,
+        new SaveOrder(),
+        new UpdateInventory()
     )
 ));
 ```
@@ -1104,16 +1117,42 @@ pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
 
 The production-proven nesting pattern for data mutation pipelines:
 
+Option A: TransactionScope wrapper
+
 ```
 OnTimeoutRetry<T>(maxRetries,                    ← retry transient failures
-    StartTransaction<T>(                          ← optional, for mutations
-        OpenSqlConnection<T>(connectionString,    ← database scope
+    StartTransactionScope<T>(                    ← optional, TransactionScope transaction
+        OpenSqlConnection<T>(connectionString,   ← database scope
+            ValidationFilter(),                  ← business logic
+            BusinessFilter(),
+            AuditFilter())))
+```
+
+Option B: local SQL transaction
+
+```
+OnTimeoutRetry<T>(maxRetries,                    ← retry transient failures
+    OpenSqlConnection<T>(connectionString,        ← database scope
+        StartSqlTransaction<T>(                   ← optional, local SQL transaction
             ValidationFilter(),                   ← business logic
             BusinessFilter(),
             AuditFilter())))
 ```
 
-For read-only operations, omit `StartTransaction`:
+Option C: local SQL transaction with inner retry — more efficient for transient errors that don't kill the connection
+
+```
+OpenSqlConnection<T>(connectionString,            ← one connection for all retries
+    OnTimeoutRetry<T>(maxRetries,                 ← retry inside the open connection
+        StartSqlTransaction<T>(                   ← new transaction per attempt
+            ValidationFilter(),
+            BusinessFilter(),
+            AuditFilter())))
+```
+
+> **Choosing between B and C:** Option C avoids tearing down and re-establishing the connection on each retry, which is faster when the transient error is a deadlock, lock timeout, or similar server-side contention. Use Option B (or A) when the error may have killed the connection itself (e.g. network drop, transport-level error).
+
+For read-only operations, omit transaction filters:
 
 ```
 OnTimeoutRetry<T>(maxRetries,
@@ -1675,11 +1714,33 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
         pipe.Use(new LoggingAspect<CreateOrderMessage>(logger, "CreateOrder", env));
         pipe.Use(new TelemetryAspect<CreateOrderMessage>(adapter));
 
+        // Option A: TransactionScope
         pipe.Add(
             new ValidateOrder(),
             new OnTimeoutRetry<CreateOrderMessage>(AppSettings.Instance.MaxRetries,
-                new StartTransaction<CreateOrderMessage>(
+                new StartTransactionScope<CreateOrderMessage>(
                     new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionString,
+                        new SaveOrder(),
+                        new SaveOrderLines(),
+                        new CaptureChanges<CreateOrderMessage>()))));
+
+        // Option B: local SQL transaction
+        pipe.Add(
+            new ValidateOrder(),
+            new OnTimeoutRetry<CreateOrderMessage>(AppSettings.Instance.MaxRetries,
+                new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionString,
+                    new StartSqlTransaction<CreateOrderMessage>(
+                        new SaveOrder(),
+                        new SaveOrderLines(),
+                        new CaptureChanges<CreateOrderMessage>()))));
+
+        // Option C: local SQL transaction with inner retry (more efficient for transient errors
+        // that don't kill the connection, e.g. deadlocks, lock timeouts)
+        pipe.Add(
+            new ValidateOrder(),
+            new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionString,
+                new OnTimeoutRetry<CreateOrderMessage>(AppSettings.Instance.MaxRetries,
+                    new StartSqlTransaction<CreateOrderMessage>(
                         new SaveOrder(),
                         new SaveOrderLines(),
                         new CaptureChanges<CreateOrderMessage>()))));
@@ -2275,11 +2336,33 @@ public class InvoiceService(ILogger<InvoiceService> logger) : IInvoiceService
                 return msg.Result.RequiresManualReview
                     ? new RouteToApprovalQueue()
                     : new OnTimeoutRetry<CreateInvoiceMessage>(AppSettings.Instance.MaxRetries,
-                        new StartTransaction<CreateInvoiceMessage>(
+                        // Option A: TransactionScope
+                        new StartTransactionScope<CreateInvoiceMessage>(
                             new OpenSqlConnection<CreateInvoiceMessage>(AppSettings.Instance.ConnectionString,
                                 new SaveInvoice(),
                                 new SaveInvoiceLines(),
                                 new UpdateAccountsPayable())));
+
+                // Option B: local SQL transaction
+                // return msg.Result.RequiresManualReview
+                //     ? new RouteToApprovalQueue()
+                //     : new OnTimeoutRetry<CreateInvoiceMessage>(AppSettings.Instance.MaxRetries,
+                //         new OpenSqlConnection<CreateInvoiceMessage>(AppSettings.Instance.ConnectionString,
+                //             new StartSqlTransaction<CreateInvoiceMessage>(
+                //                 new SaveInvoice(),
+                //                 new SaveInvoiceLines(),
+                //                 new UpdateAccountsPayable())));
+
+                // Option C: local SQL transaction with inner retry (more efficient for
+                // transient errors that don't kill the connection, e.g. deadlocks)
+                // return msg.Result.RequiresManualReview
+                //     ? new RouteToApprovalQueue()
+                //     : new OpenSqlConnection<CreateInvoiceMessage>(AppSettings.Instance.ConnectionString,
+                //         new OnTimeoutRetry<CreateInvoiceMessage>(AppSettings.Instance.MaxRetries,
+                //             new StartSqlTransaction<CreateInvoiceMessage>(
+                //                 new SaveInvoice(),
+                //                 new SaveInvoiceLines(),
+                //                 new UpdateAccountsPayable())));
             }),
             new SendSupplierNotification());
 
@@ -2384,8 +2467,10 @@ Pipeline.Invoke(msg)
 | Filter | Constraint | Purpose |
 |--------|-----------|---------|
 | `OpenSqlConnection<T>(connStr, filters...)` | `IUseSqlCommand` | Scoped SQL connection |
-| `StartTransaction<T>(filters...)` | `IAmCommittable` + `IUseSqlCommand` | SQL transaction |
-| `StartTransaction<T>(isolationLevel, filters...)` | `IAmCommittable` + `IUseSqlCommand` | Transaction with isolation level |
+| `StartTransactionScope<T>(filters...)` | `IAmCommittable` | TransactionScope-based transaction |
+| `StartTransactionScope<T>(isolationLevel, filters...)` | `IAmCommittable` | TransactionScope-based transaction with isolation level |
+| `StartSqlTransaction<T>(filters...)` | `IAmCommittable` + `IUseSqlCommand` | Local SQL transaction via `BeginTransactionAsync` |
+| `StartSqlTransaction<T>(isolationLevel, filters...)` | `IAmCommittable` + `IUseSqlCommand` | Local SQL transaction with isolation level |
 
 ### Aspects
 

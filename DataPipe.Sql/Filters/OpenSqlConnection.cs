@@ -42,7 +42,9 @@ namespace DataPipe.Sql.Filters
         public async Task Execute(T msg)
         {
             // Track timing and outcome for this structural filter
-            var structuralSw = Stopwatch.StartNew();
+            var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+            var timingEnabled = telemetryEnabled || msg.EnableTimings;
+            Stopwatch? structuralSw = timingEnabled ? Stopwatch.StartNew() : null;
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
             string databaseName = string.Empty;
@@ -100,7 +102,7 @@ namespace DataPipe.Sql.Filters
                 // do not leave msg.Command pointing at a disposed instance.
                 msg.Command = previousCommand!;
 
-                structuralSw.Stop();
+                structuralSw?.Stop();
                 
                 var @cnnEnd = new TelemetryEvent
                 {
@@ -115,7 +117,7 @@ namespace DataPipe.Sql.Filters
                     Outcome = structuralOutcome,
                     Reason = structuralReason,
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                 };
                 if (msg.ShouldEmitTelemetry(@cnnEnd)) msg.OnTelemetry?.Invoke(@cnnEnd);
                 

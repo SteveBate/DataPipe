@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using DataPipe.Core;
 using DataPipe.Core.Contracts;
 using DataPipe.Sql.Contracts;
+using Microsoft.Data.SqlClient;
 
 namespace DataPipe.Tests.Support
 {
@@ -34,5 +35,11 @@ namespace DataPipe.Tests.Support
         public int Id { get; set; }
         public int Value { get; set; }
         public string ParentConnectionString { get; set; }
+    }
+
+    class SqlTransactionTestMessage : BaseMessage, IUseSqlCommand, IAmCommittable
+    {
+        public SqlCommand Command { get; set; } = default!;
+        public bool Commit { get; set; } = true;
     }
 }
