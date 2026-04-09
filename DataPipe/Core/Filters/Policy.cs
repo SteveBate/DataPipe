@@ -43,7 +43,9 @@ namespace DataPipe.Core.Filters
         public async Task Execute(T msg)
         {
             // Track timing and outcome for this structural filter
-            var structuralSw = Stopwatch.StartNew();
+            var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+            var timingEnabled = telemetryEnabled || msg.EnableTimings;
+            Stopwatch? structuralSw = timingEnabled ? Stopwatch.StartNew() : null;
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
             Filter<T>? filter = null;
@@ -81,7 +83,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@exStart)) msg.OnTelemetry?.Invoke(@exStart);
                 
-                structuralSw.Stop();
+                structuralSw?.Stop();
                 var @exEnd = new TelemetryEvent
                 {
                     Actor = msg.Actor,
@@ -95,7 +97,7 @@ namespace DataPipe.Core.Filters
                     Outcome = TelemetryOutcome.Exception,
                     Reason = ex.Message,
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                     Attributes = new Dictionary<string, object> { ["decision"] = decision, ["exception"] = ex.GetType().Name }
                 };
                 if (msg.ShouldEmitTelemetry(@exEnd)) msg.OnTelemetry?.Invoke(@exEnd);
@@ -123,7 +125,7 @@ namespace DataPipe.Core.Filters
                 };
                 if (msg.ShouldEmitTelemetry(@policyStart)) msg.OnTelemetry?.Invoke(@policyStart);
                 
-                structuralSw.Stop();
+                structuralSw?.Stop();
                 var @policyEnd = new TelemetryEvent
                 {
                     Actor = msg.Actor,
@@ -137,7 +139,7 @@ namespace DataPipe.Core.Filters
                     Outcome = msg.Execution.IsStopped ? TelemetryOutcome.Stopped : TelemetryOutcome.Success,
                     Reason = msg.Execution.Reason ?? "",
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                     Attributes = new Dictionary<string, object> { ["decision"] = decision }
                 };
                 if (msg.ShouldEmitTelemetry(@policyEnd)) msg.OnTelemetry?.Invoke(@policyEnd);
@@ -174,7 +176,7 @@ namespace DataPipe.Core.Filters
             }
             finally
             {
-                structuralSw.Stop();
+                structuralSw?.Stop();
                 
                 var @end = new TelemetryEvent
                 {
@@ -189,7 +191,7 @@ namespace DataPipe.Core.Filters
                     Outcome = structuralOutcome,
                     Reason = structuralReason,
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                     Attributes = new Dictionary<string, object> { ["decision"] = decision }
                 };
                 if (msg.ShouldEmitTelemetry(@end)) msg.OnTelemetry?.Invoke(@end);

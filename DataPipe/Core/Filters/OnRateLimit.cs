@@ -74,7 +74,9 @@ namespace DataPipe.Core.Filters
 
         public async Task Execute(T msg)
         {
-            var structuralSw = Stopwatch.StartNew();
+            var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+            var timingEnabled = telemetryEnabled || msg.EnableTimings;
+            Stopwatch? structuralSw = timingEnabled ? Stopwatch.StartNew() : null;
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
             var rejected = false;
@@ -82,10 +84,10 @@ namespace DataPipe.Core.Filters
             int queueDepthAtEntry;
 
             // 1. Acquire a slot in the bucket (drain expired tokens, check capacity)
-            var waitSw = Stopwatch.StartNew();
+            Stopwatch? waitSw = timingEnabled ? Stopwatch.StartNew() : null;
             bool admitted = await TryAcquireAsync(msg).ConfigureAwait(false);
-            waitSw.Stop();
-            waitTimeMs = waitSw.ElapsedMilliseconds;
+            waitSw?.Stop();
+            waitTimeMs = waitSw?.ElapsedMilliseconds ?? 0;
 
             lock (_state.Lock)
             {
@@ -147,7 +149,7 @@ namespace DataPipe.Core.Filters
             }
             finally
             {
-                structuralSw.Stop();
+                structuralSw?.Stop();
 
                 int finalQueueDepth;
                 lock (_state.Lock)
@@ -176,7 +178,7 @@ namespace DataPipe.Core.Filters
                     Outcome = structuralOutcome,
                     Reason = structuralReason,
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                     Attributes = endAttributes
                 };
                 if (msg.ShouldEmitTelemetry(@rlEnd)) msg.OnTelemetry?.Invoke(@rlEnd);

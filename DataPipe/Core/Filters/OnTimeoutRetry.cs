@@ -101,7 +101,9 @@ namespace DataPipe.Core.Filters
             _lastRetryReason = null;
 
             // Track timing and outcome for this structural filter
-            var structuralSw = Stopwatch.StartNew();
+            var telemetryEnabled = msg.TelemetryMode != TelemetryMode.Off;
+            var timingEnabled = telemetryEnabled || msg.EnableTimings;
+            Stopwatch? structuralSw = timingEnabled ? Stopwatch.StartNew() : null;
             var structuralOutcome = TelemetryOutcome.Success;
             var structuralReason = string.Empty;
 
@@ -163,7 +165,7 @@ namespace DataPipe.Core.Filters
             }
             finally
             {
-                structuralSw.Stop();
+                structuralSw?.Stop();
                 
                 // Build end attributes including retry info if retries occurred
                 var endAttributes = new Dictionary<string, object>
@@ -192,7 +194,7 @@ namespace DataPipe.Core.Filters
                     Outcome = structuralOutcome,
                     Reason = structuralReason,
                     Timestamp = DateTimeOffset.UtcNow,
-                    DurationMs = structuralSw.ElapsedMilliseconds,
+                    DurationMs = structuralSw?.ElapsedMilliseconds ?? 0,
                     Attributes = endAttributes
                 };
                 if (msg.ShouldEmitTelemetry(@retryEnd)) msg.OnTelemetry?.Invoke(@retryEnd);
