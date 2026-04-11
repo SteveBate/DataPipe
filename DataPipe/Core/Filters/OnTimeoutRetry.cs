@@ -239,15 +239,36 @@ namespace DataPipe.Core.Filters
 
         /// <summary>
         /// Default retry logic for transient errors:
-        /// - TimeoutException
-        /// - Transport-level database/network errors
-        /// - Deadlocks
+        /// - TimeoutException (exact type match)
+        /// - Transport-level database/network errors (message text)
+        /// - Deadlocks (message text)
+        /// - Timeout keywords in message text
+        ///
+        /// String matching uses OrdinalIgnoreCase and walks the full InnerException
+        /// chain so that wrapped exceptions (e.g. AggregateException) are detected.
+        ///
+        /// The default strings are tuned for Microsoft.Data.SqlClient English messages.
+        /// For non-English locales or other databases, supply a custom retryWhen delegate.
         /// </summary>
-        private static bool DefaultRetryWhen(Exception ex, T _) =>
-            ex is TimeoutException ||
-            ex.Message.Contains("transport-level error") ||
-            ex.Message.Contains("deadlocked") ||
-            ex.Message.Contains("timeout");
+        private static bool DefaultRetryWhen(Exception ex, T _) => IsTransient(ex);
+
+        private static bool IsTransient(Exception? ex)
+        {
+            while (ex is not null)
+            {
+                if (ex is TimeoutException ||
+                    ex.Message.Contains("transport-level error", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.Contains("deadlocked", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                ex = ex.InnerException;
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// Default linear sliding delay between retries
