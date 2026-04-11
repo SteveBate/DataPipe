@@ -157,7 +157,7 @@ namespace DataPipe.Tests
                 pipe.Add(new OnCircuitBreak<TestMessage>(state,
                     failureThreshold: 3,
                     breakDuration: TimeSpan.FromMilliseconds(50),
-                    new AlwaysFailingFilter()));
+                    filters: [new AlwaysFailingFilter()]));
                 await pipe.Invoke(new TestMessage { Service = si });
             }
             Assert.AreEqual(CircuitState.Open, state.Status);
@@ -169,7 +169,7 @@ namespace DataPipe.Tests
             sut.Add(new OnCircuitBreak<TestMessage>(state,
                 failureThreshold: 3,
                 breakDuration: TimeSpan.FromMilliseconds(50),
-                new IncrementingNumberFilter()));
+                filters: [new IncrementingNumberFilter()]));
             var msg = new TestMessage { Number = 0, Service = si };
             await sut.Invoke(msg);
 
@@ -191,7 +191,7 @@ namespace DataPipe.Tests
                 pipe.Add(new OnCircuitBreak<TestMessage>(state,
                     failureThreshold: 3,
                     breakDuration: TimeSpan.FromMilliseconds(50),
-                    new AlwaysFailingFilter()));
+                    filters: [new AlwaysFailingFilter()]));
                 await pipe.Invoke(new TestMessage { Service = si });
             }
 
@@ -202,7 +202,7 @@ namespace DataPipe.Tests
             sut.Add(new OnCircuitBreak<TestMessage>(state,
                 failureThreshold: 3,
                 breakDuration: TimeSpan.FromMilliseconds(50),
-                new AlwaysFailingFilter()));
+                filters: [new AlwaysFailingFilter()]));
             await sut.Invoke(new TestMessage { Service = si });
 
             // then — back to Open
@@ -260,7 +260,7 @@ namespace DataPipe.Tests
             sut.Add(new OnCircuitBreak<TestMessage>(state,
                 failureThreshold: 5,
                 breakDuration: TimeSpan.FromSeconds(30),
-                new IncrementingNumberFilter()));
+                filters: [new IncrementingNumberFilter()]));
             var msg = new TestMessage
             {
                 Number = 0,
@@ -381,6 +381,118 @@ namespace DataPipe.Tests
             Assert.AreEqual(10, results.Count);
             Assert.IsTrue(results.All(sc => sc != 200),
                 $"Expected all non-200 but got: {string.Join(",", results)}");
+        }
+
+        [TestMethod]
+        public async Task Should_apply_jitter_to_break_duration()
+        {
+            // given — jitterRatio of 1.0 means ±100%, so break could be 0–200ms for a 100ms base
+            var state = new CircuitBreakerState();
+            var baseDuration = TimeSpan.FromMilliseconds(100);
+
+            for (int i = 0; i < 3; i++)
+            {
+                var pipe = new DataPipe<TestMessage>();
+                pipe.Use(new ExceptionAspect<TestMessage>());
+                pipe.Add(new OnCircuitBreak<TestMessage>(state,
+                    failureThreshold: 3,
+                    breakDuration: baseDuration,
+                    jitterRatio: 1.0,
+                    filters: [new AlwaysFailingFilter()]));
+                await pipe.Invoke(new TestMessage { Service = si });
+            }
+
+            // then — circuit is open with a LockedUntil that differs from exact base
+            Assert.AreEqual(CircuitState.Open, state.Status);
+            Assert.IsNotNull(state.LockedUntil);
+
+            // The jittered duration should be between 0ms and 200ms from the trip time
+            var remaining = state.LockedUntil.Value - DateTimeOffset.UtcNow;
+            Assert.IsTrue(remaining.TotalMilliseconds <= 200,
+                $"LockedUntil is too far in the future: {remaining.TotalMilliseconds}ms");
+        }
+
+        [TestMethod]
+        public async Task Should_not_apply_jitter_when_ratio_is_zero()
+        {
+            // given
+            var state = new CircuitBreakerState();
+            var baseDuration = TimeSpan.FromSeconds(10);
+            var tripTime = DateTimeOffset.UtcNow;
+
+            for (int i = 0; i < 3; i++)
+            {
+                var pipe = new DataPipe<TestMessage>();
+                pipe.Use(new ExceptionAspect<TestMessage>());
+                pipe.Add(new OnCircuitBreak<TestMessage>(state,
+                    failureThreshold: 3,
+                    breakDuration: baseDuration,
+                    jitterRatio: 0.0,
+                    filters: [new AlwaysFailingFilter()]));
+                await pipe.Invoke(new TestMessage { Service = si });
+            }
+
+            // then — LockedUntil should be very close to tripTime + 10 seconds (no jitter)
+            Assert.AreEqual(CircuitState.Open, state.Status);
+            var expected = tripTime.Add(baseDuration);
+            var drift = Math.Abs((state.LockedUntil.Value - expected).TotalMilliseconds);
+            Assert.IsTrue(drift < 500,
+                $"Expected LockedUntil within 500ms of exact duration but drift was {drift}ms");
+        }
+
+        [TestMethod]
+        public async Task Should_produce_varied_break_durations_with_jitter()
+        {
+            // given — trip the circuit multiple times with jitter and collect LockedUntil values
+            var durations = new List<DateTimeOffset>();
+
+            for (int run = 0; run < 10; run++)
+            {
+                var state = new CircuitBreakerState();
+                for (int i = 0; i < 3; i++)
+                {
+                    var pipe = new DataPipe<TestMessage>();
+                    pipe.Use(new ExceptionAspect<TestMessage>());
+                    pipe.Add(new OnCircuitBreak<TestMessage>(state,
+                        failureThreshold: 3,
+                        breakDuration: TimeSpan.FromSeconds(10),
+                        jitterRatio: 0.5,
+                        filters: [new AlwaysFailingFilter()]));
+                    await pipe.Invoke(new TestMessage { Service = si });
+                }
+                durations.Add(state.LockedUntil!.Value);
+            }
+
+            // then — not all durations should be identical (jitter introduces variance)
+            var distinct = durations.Select(d => d.ToUnixTimeMilliseconds()).Distinct().Count();
+            Assert.IsTrue(distinct > 1,
+                "Expected varied LockedUntil values with jitter but all were identical");
+        }
+
+        [TestMethod]
+        public async Task Should_clamp_jitter_ratio_to_valid_range()
+        {
+            // given — jitterRatio > 1.0 should be clamped to 1.0
+            var state = new CircuitBreakerState();
+            var baseDuration = TimeSpan.FromMilliseconds(100);
+
+            for (int i = 0; i < 3; i++)
+            {
+                var pipe = new DataPipe<TestMessage>();
+                pipe.Use(new ExceptionAspect<TestMessage>());
+                pipe.Add(new OnCircuitBreak<TestMessage>(state,
+                    failureThreshold: 3,
+                    breakDuration: baseDuration,
+                    jitterRatio: 5.0, // should be clamped to 1.0
+                    filters: [new AlwaysFailingFilter()]));
+                await pipe.Invoke(new TestMessage { Service = si });
+            }
+
+            // then — circuit tripped and LockedUntil is within clamped range (0–200ms from trip)
+            Assert.AreEqual(CircuitState.Open, state.Status);
+            var remaining = state.LockedUntil.Value - DateTimeOffset.UtcNow;
+            Assert.IsTrue(remaining.TotalMilliseconds <= 200,
+                $"Clamped jitter should limit LockedUntil but got {remaining.TotalMilliseconds}ms remaining");
         }
     }
 

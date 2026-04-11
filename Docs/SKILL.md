@@ -852,6 +852,18 @@ pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
 
 **Key:** When one pipeline trips the circuit, all pipelines sharing the same `CircuitBreakerState` fail fast immediately. Place retry _inside_ the circuit breaker so that a full retry cycle counts as one circuit attempt.
 
+**Jitter:** In distributed systems, a fixed break duration causes all instances to recover simultaneously (thundering herd). Add `jitterRatio` to spread recovery probes:
+
+```csharp
+pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
+    failureThreshold: 5,
+    breakDuration: TimeSpan.FromSeconds(30),
+    jitterRatio: 0.2,   // ±20% → break of 24–36 seconds
+    filters: new CallPaymentGateway()));
+```
+
+`jitterRatio` ranges from `0.0` (no jitter, default) to `1.0` (±100%). Values above 1.0 are clamped.
+
 When the circuit is open (or half-open with a probe already in progress), `OnCircuitBreak` throws `CircuitBreakerOpenException`. The built-in `ExceptionAspect<T>` catches this and sets `StatusCode = 503` (Service Unavailable), distinguishing circuit breaker rejections from general server errors (500).
 
 ### 6.6 OnRateLimit\<T\> — Rate Limiting (Leaky Bucket)
@@ -2423,7 +2435,7 @@ Pipeline.Invoke(msg)
 | `Policy<T>(selector)` | `BaseMessage` | Multi-branch runtime dispatch |
 | `Sequence<T>(filters...)` | `BaseMessage` | Group filters as one logical step |
 | `OnTimeoutRetry<T>(max, filters...)` | `IAmRetryable` | Retry on timeout |
-| `OnCircuitBreak<T>(state, threshold?, duration?, filters...)` | `BaseMessage` | Circuit breaker pattern |
+| `OnCircuitBreak<T>(state, threshold?, duration?, jitterRatio?, filters...)` | `BaseMessage` | Circuit breaker pattern (jitterRatio 0.0–1.0 spreads recovery) |
 | `OnRateLimit<T>(state, capacity, leakInterval, behavior?, filters...)` | `BaseMessage` | Rate limiting (leaky bucket) |
 | `Timeout<T>(duration, filters...)` | `BaseMessage` | Timeout execution |
 | `DelayExecution<T>(delay, filters...)` | `BaseMessage` | Delay before execution |

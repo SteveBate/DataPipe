@@ -47,6 +47,13 @@ namespace DataPipe.Core.Filters
     ///    pipe.Add(new OnCircuitBreak<OrderMessage>(circuitState,
     ///        new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
     ///            new CallExternalApi())));
+    ///
+    /// With jitter to prevent thundering herd on recovery:
+    ///    pipe.Add(new OnCircuitBreak<OrderMessage>(circuitState,
+    ///        failureThreshold: 5,
+    ///        breakDuration: TimeSpan.FromSeconds(30),
+    ///        jitterRatio: 0.2,  // ±20% → break of 24–36 seconds
+    ///        new CallExternalApi()));
     /// </summary>
     public sealed class OnCircuitBreak<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
@@ -56,16 +63,28 @@ namespace DataPipe.Core.Filters
         private readonly CircuitBreakerState _state;
         private readonly int _failureThreshold;
         private readonly TimeSpan _breakDuration;
+        private readonly double _jitterRatio;
 
+        /// <summary>
+        /// Creates a circuit breaker structural filter.
+        /// </summary>
+        /// <param name="state">Shared circuit breaker state. Register as a singleton in DI for cross-pipeline sharing.</param>
+        /// <param name="failureThreshold">Consecutive failures before the circuit trips to Open.</param>
+        /// <param name="breakDuration">How long the circuit stays open before allowing a half-open probe. Default 30 seconds.</param>
+        /// <param name="jitterRatio">Random offset applied to break duration to prevent thundering herd. 
+        /// 0.0 = no jitter (default), 0.2 = ±20% of breakDuration. Clamped to 0.0–1.0.</param>
+        /// <param name="filters">Child filters to execute when the circuit is closed or half-open.</param>
         public OnCircuitBreak(
             CircuitBreakerState state,
             int failureThreshold = 5,
             TimeSpan? breakDuration = null,
+            double jitterRatio = 0.0,
             params Filter<T>[] filters)
         {
             _state = state;
             _failureThreshold = failureThreshold;
             _breakDuration = breakDuration ?? TimeSpan.FromSeconds(30);
+            _jitterRatio = Math.Clamp(jitterRatio, 0.0, 1.0);
             _filters = filters;
         }
 
@@ -169,9 +188,12 @@ namespace DataPipe.Core.Filters
                         if (_state.FailureCount >= _failureThreshold || _state.Status == CircuitState.HalfOpen)
                         {
                             _state.Status = CircuitState.Open;
-                            _state.LockedUntil = DateTimeOffset.UtcNow.Add(_breakDuration);
+                            var effectiveDuration = _jitterRatio > 0.0
+                                ? ApplyJitter(_breakDuration, _jitterRatio)
+                                : _breakDuration;
+                            _state.LockedUntil = DateTimeOffset.UtcNow.Add(effectiveDuration);
                             circuitTripped = true;
-                            msg.OnLog?.Invoke($"Circuit TRIPPED to OPEN for {_breakDuration.TotalSeconds} seconds.");
+                            msg.OnLog?.Invoke($"Circuit TRIPPED to OPEN for {effectiveDuration.TotalSeconds:F1} seconds.");
                         }
                     }
                 }
@@ -219,6 +241,18 @@ namespace DataPipe.Core.Filters
 
                 msg.Execution.ClearTelemetryAnnotations();
             }
+        }
+
+        /// <summary>
+        /// Applies a random jitter offset to the break duration.
+        /// The result is breakDuration ± (breakDuration × jitterRatio × random).
+        /// </summary>
+        private static TimeSpan ApplyJitter(TimeSpan breakDuration, double jitterRatio)
+        {
+            // Random.Shared is thread-safe (.NET 6+)
+            var offset = breakDuration.TotalMilliseconds * jitterRatio * (Random.Shared.NextDouble() * 2.0 - 1.0);
+            var jittered = breakDuration.TotalMilliseconds + offset;
+            return TimeSpan.FromMilliseconds(Math.Max(jittered, 0));
         }
     }
 }

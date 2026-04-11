@@ -105,6 +105,25 @@ pipeline.Add(new OnCircuitBreak<OrderMessage>(shippingCircuit,
 
 Each circuit operates independently. A payment gateway outage won't prevent inventory checks.
 
+## Jitter — preventing thundering herd on recovery
+
+When multiple instances share a circuit and it trips, they all recover at the same instant by default — creating a thundering herd against the recovering resource. The `jitterRatio` parameter adds a random offset to the break duration to spread recovery probes:
+
+```csharp
+pipeline.Add(new OnCircuitBreak<OrderMessage>(circuitState,
+    failureThreshold: 5,
+    breakDuration: TimeSpan.FromSeconds(30),
+    jitterRatio: 0.2,   // ±20% → break of 24–36 seconds
+    new CallPaymentGateway()));
+```
+
+- `jitterRatio: 0.0` (default) — no jitter, exact break duration
+- `jitterRatio: 0.2` — ±20% of the base duration
+- `jitterRatio: 1.0` — ±100% (maximum spread)
+- Values above 1.0 are clamped to 1.0
+
+Each time the circuit trips, a fresh random offset is computed, so different instances recover at different times.
+
 ## Handling open circuit rejections
 
 When the circuit is open (or half-open with a probe already in progress), `OnCircuitBreak` throws `CircuitBreakerOpenException`. The built-in `ExceptionAspect` catches this and sets `StatusCode = 503` (Service Unavailable) automatically:
