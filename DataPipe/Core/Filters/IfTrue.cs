@@ -9,7 +9,7 @@ namespace DataPipe.Core.Filters
     /// IfTrue allows you to conditionally execute one or more filters i.e. branching logic within a pipeline.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class IfTrue<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class IfTrue<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end events to include decision attribute
 

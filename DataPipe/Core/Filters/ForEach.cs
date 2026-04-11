@@ -11,7 +11,7 @@ namespace DataPipe.Core.Filters
     /// </summary>
     /// <typeparam name="TParent">The parent message type (the pipeline's message).</typeparam>
     /// <typeparam name="TChild">The child message type. Must derive from <see cref="BaseMessage"/>.</typeparam>
-    public class ForEach<TParent, TChild> : Filter<TParent>, IAmStructural
+    public sealed class ForEach<TParent, TChild> : Filter<TParent>, IAmStructural
         where TParent : BaseMessage
         where TChild : BaseMessage
     {

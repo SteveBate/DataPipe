@@ -48,7 +48,7 @@ namespace DataPipe.Core.Filters
     ///        new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
     ///            new CallExternalApi())));
     /// </summary>
-    public class OnCircuitBreak<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class OnCircuitBreak<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end to include circuit-state attributes
 

@@ -12,7 +12,7 @@ namespace DataPipe.Core.Filters
     /// A <see cref="TimeoutException"/> is thrown when the timeout elapses.
     /// </summary>
     /// <typeparam name="T">The message type. Must derive from <see cref="BaseMessage"/>.</typeparam>
-    public class Timeout<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class Timeout<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end events to include timeout duration attribute
 

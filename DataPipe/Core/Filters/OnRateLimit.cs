@@ -44,7 +44,7 @@ namespace DataPipe.Core.Filters
     ///            new OnTimeoutRetry<OrderMessage>(maxRetries: 2,
     ///                new CallShopifyApi()))));
     /// </summary>
-    public class OnRateLimit<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class OnRateLimit<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end to include rate-limit attributes
 

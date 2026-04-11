@@ -11,7 +11,7 @@ namespace DataPipe.Core.Filters
     /// An optional predicate controls which exceptions are caught; unmatched exceptions propagate normally.
     /// </summary>
     /// <typeparam name="T">The message type. Must derive from <see cref="BaseMessage"/>.</typeparam>
-    public class TryCatch<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class TryCatch<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end events to include caught/fallback attributes
 

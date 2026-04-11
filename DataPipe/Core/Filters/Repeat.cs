@@ -28,7 +28,7 @@ namespace DataPipe.Core.Filters
     /// </para>
     /// </remarks>
     /// <typeparam name="T">The message type, must derive from <see cref="BaseMessage"/>.</typeparam>
-    public class Repeat<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class Repeat<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => true;
 

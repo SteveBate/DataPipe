@@ -29,7 +29,7 @@ namespace DataPipe.Core.Filters
     ///     msg.Priority == High ? new HighPriorityFilter() : new NormalPriorityFilter());
     /// </code>
     /// </remarks>
-    public class Policy<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class Policy<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end events to include decision attribute
 

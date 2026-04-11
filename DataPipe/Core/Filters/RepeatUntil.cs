@@ -33,7 +33,7 @@ namespace DataPipe.Core.Filters
     /// If the callback condition returns true on the initial check, no filters are executed.
     /// </para>
     /// </remarks>
-    public class RepeatUntil<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class RepeatUntil<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end events to include condition attribute
 

@@ -29,7 +29,7 @@ namespace DataPipe.Sql.Filters
     /// </para>
     /// </remarks>
     /// <typeparam name="T">The message type, constrained to inherit from BaseMessage and implement IAmCommittable</typeparam>
-    public class StartTransactionScope<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmCommittable
+    public sealed class StartTransactionScope<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmCommittable
     {
         public bool EmitTelemetryEvent => false; // emit own start event rather than parent so we can capture isolation level and timeout
 

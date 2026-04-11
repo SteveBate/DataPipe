@@ -9,7 +9,7 @@ namespace DataPipe.Core.Filters
     /// </summary>
     /// <typeparam name="T">The type of message being processed.</typeparam>
     /// <param name="filters">The filters to execute.</param>
-    public class Sequence<T>(params Filter<T>[] filters) : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class Sequence<T>(params Filter<T>[] filters) : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => true;
 

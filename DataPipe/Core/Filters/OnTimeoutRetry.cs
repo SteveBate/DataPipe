@@ -39,7 +39,7 @@ namespace DataPipe.Core.Filters
     ///        retryWhen: (ex, msg) => ex is TimeoutException || ex.Message.Contains("busy"),
     ///        customDelay: (attempt, msg) => TimeSpan.FromSeconds(attempt * 1.5)));
     /// </summary>
-    public class OnTimeoutRetry<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmRetryable
+    public sealed class OnTimeoutRetry<T> : Filter<T>, IAmStructural where T : BaseMessage, IAmRetryable
     {
         public bool EmitTelemetryEvent => false; // emit own start event rather than parent so we can capture max attempts
 

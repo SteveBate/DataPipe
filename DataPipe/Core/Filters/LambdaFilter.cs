@@ -14,7 +14,7 @@ namespace DataPipe.Core.Filters
     /// This is useful for simple, one-off filtering operations where creating a dedicated filter class
     /// would be unnecessary overhead.
     /// </para>
-    public class LambdaFilter<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class LambdaFilter<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => true;
         /// <summary>

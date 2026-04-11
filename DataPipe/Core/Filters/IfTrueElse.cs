@@ -11,7 +11,7 @@ namespace DataPipe.Core.Filters
     /// If false, the <c>elseFilters</c> are executed.
     /// </summary>
     /// <typeparam name="T">The message type. Must derive from <see cref="BaseMessage"/>.</typeparam>
-    public class IfTrueElse<T> : Filter<T>, IAmStructural where T : BaseMessage
+    public sealed class IfTrueElse<T> : Filter<T>, IAmStructural where T : BaseMessage
     {
         public bool EmitTelemetryEvent => false; // emit own start/end events to include decision attribute
 
