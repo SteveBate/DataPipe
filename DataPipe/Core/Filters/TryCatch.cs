@@ -75,12 +75,25 @@ namespace DataPipe.Core.Filters
                 {
                     caughtException = true;
 
+                    // Save any existing exception from an outer TryCatch to support nesting
+                    var hadPrevious = msg.State.Has("TryCatch.Exception");
+                    var previous = hadPrevious ? msg.State.Get<Exception>("TryCatch.Exception") : null;
+
                     // Store the caught exception in transient state so catch filters can inspect it
                     msg.State.Set("TryCatch.Exception", ex);
 
-                    await FilterRunner.ExecuteFiltersAsync(_catchFilters, msg, msg.PipelineName).ConfigureAwait(false);
-
-                    msg.State.Remove("TryCatch.Exception");
+                    try
+                    {
+                        await FilterRunner.ExecuteFiltersAsync(_catchFilters, msg, msg.PipelineName).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // Restore outer TryCatch exception or remove the key
+                        if (hadPrevious)
+                            msg.State.Set("TryCatch.Exception", previous!);
+                        else
+                            msg.State.Remove("TryCatch.Exception");
+                    }
                 }
             }
             catch (Exception ex)
