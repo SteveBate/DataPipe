@@ -36,6 +36,7 @@ namespace DataPipe.Core.Filters
 
         private readonly Func<TParent, IEnumerable<TChild>> _selector;
         private readonly Action<TParent, TChild>? _mapper;
+        private readonly Action<TParent, IReadOnlyList<TChild>>? _aggregator;
         private readonly int _maxDegreeOfParallelism;
         private readonly Filter<TChild>[] _filters;
 
@@ -47,7 +48,7 @@ namespace DataPipe.Core.Filters
         public ParallelForEach(
             Func<TParent, IEnumerable<TChild>> selector,
             params Filter<TChild>[] filters)
-            : this(selector, null, -1, filters) { }
+            : this(selector, null, null, -1, filters) { }
 
         /// <summary>
         /// Creates a ParallelForEach filter with a mapper and default parallelism.
@@ -59,7 +60,7 @@ namespace DataPipe.Core.Filters
             Func<TParent, IEnumerable<TChild>> selector,
             Action<TParent, TChild> mapper,
             params Filter<TChild>[] filters)
-            : this(selector, mapper, -1, filters) { }
+            : this(selector, mapper, null, -1, filters) { }
 
         /// <summary>
         /// Creates a ParallelForEach filter with a mapper and explicit parallelism control.
@@ -73,11 +74,30 @@ namespace DataPipe.Core.Filters
             Action<TParent, TChild>? mapper,
             int maxDegreeOfParallelism,
             params Filter<TChild>[] filters)
+            : this(selector, mapper, null, maxDegreeOfParallelism, filters) { }
+
+        /// <summary>
+        /// Creates a ParallelForEach filter with a mapper, aggregator, and explicit parallelism control.
+        /// The aggregator is invoked after all children have been processed, receiving
+        /// the parent message and the complete list of child messages.
+        /// </summary>
+        /// <param name="selector">Extracts the collection of child messages from the parent.</param>
+        /// <param name="mapper">Sets domain-specific properties on each child from the parent. Can be null.</param>
+        /// <param name="aggregator">Called after all children execute. Receives the parent and all child messages. Can be null.</param>
+        /// <param name="maxDegreeOfParallelism">Maximum concurrent branches. Use -1 for unlimited.</param>
+        /// <param name="filters">Filters to execute concurrently for each child message.</param>
+        public ParallelForEach(
+            Func<TParent, IEnumerable<TChild>> selector,
+            Action<TParent, TChild>? mapper,
+            Action<TParent, IReadOnlyList<TChild>>? aggregator,
+            int maxDegreeOfParallelism,
+            params Filter<TChild>[] filters)
         {
             ArgumentNullException.ThrowIfNull(selector);
             ArgumentNullException.ThrowIfNull(filters);
             _selector = selector;
             _mapper = mapper;
+            _aggregator = aggregator;
             _maxDegreeOfParallelism = maxDegreeOfParallelism;
             _filters = filters;
         }
@@ -101,8 +121,10 @@ namespace DataPipe.Core.Filters
                     return;
                 }
 
-                // Materialise to count branches for telemetry
-                var childList = children as ICollection<TChild> ?? new List<TChild>(children);
+                // Materialise to count branches for telemetry (use List when aggregator needs IReadOnlyList)
+                var childList = _aggregator != null
+                    ? (children as List<TChild> ?? new List<TChild>(children))
+                    : (children as ICollection<TChild> ?? new List<TChild>(children));
                 branchCount = childList.Count;
 
                 // Build start attributes
@@ -169,6 +191,12 @@ namespace DataPipe.Core.Filters
                     // Execute the filter chain for this branch
                     await FilterRunner.ExecuteFiltersAsync(_filters, child, msg.PipelineName).ConfigureAwait(false);
                 }).ConfigureAwait(false);
+
+                // Invoke the aggregator with all processed children
+                if (_aggregator != null && childList is List<TChild> list)
+                {
+                    _aggregator.Invoke(msg, list);
+                }
             }
             catch (Exception ex)
             {

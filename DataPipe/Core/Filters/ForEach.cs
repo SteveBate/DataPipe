@@ -19,6 +19,7 @@ namespace DataPipe.Core.Filters
 
         private readonly Func<TParent, IEnumerable<TChild>> _selector;
         private readonly Action<TParent, TChild>? _mapper;
+        private readonly Action<TParent, IReadOnlyList<TChild>>? _aggregator;
         private readonly Filter<TChild>[] _filters;
 
         /// <summary>
@@ -29,7 +30,7 @@ namespace DataPipe.Core.Filters
         public ForEach(
             Func<TParent, IEnumerable<TChild>> selector,
             params Filter<TChild>[] filters)
-            : this(selector, null, filters)
+            : this(selector, null, null, filters)
         {
         }
 
@@ -43,12 +44,31 @@ namespace DataPipe.Core.Filters
             Func<TParent, IEnumerable<TChild>> selector,
             Action<TParent, TChild>? mapper,
             params Filter<TChild>[] filters)
+            : this(selector, mapper, null, filters)
+        {
+        }
+
+        /// <summary>
+        /// Creates a sequential ForEach with a mapper and an aggregator callback.
+        /// The aggregator is invoked after all children have been processed, receiving
+        /// the parent message and the complete list of child messages.
+        /// </summary>
+        /// <param name="selector">Extracts the collection of child messages from the parent.</param>
+        /// <param name="mapper">Sets domain-specific properties on each child from the parent. Can be null.</param>
+        /// <param name="aggregator">Called after all children execute. Receives the parent and all child messages. Can be null.</param>
+        /// <param name="filters">Filters to execute sequentially for each child message.</param>
+        public ForEach(
+            Func<TParent, IEnumerable<TChild>> selector,
+            Action<TParent, TChild>? mapper,
+            Action<TParent, IReadOnlyList<TChild>>? aggregator,
+            params Filter<TChild>[] filters)
         {
             ArgumentNullException.ThrowIfNull(selector);
             ArgumentNullException.ThrowIfNull(filters);
 
             _selector = selector;
             _mapper = mapper;
+            _aggregator = aggregator;
             _filters = filters;
         }
 
@@ -65,7 +85,13 @@ namespace DataPipe.Core.Filters
                 return;
             }
 
-            foreach (var child in children)
+            // Materialise to a list when an aggregator is provided so it can be passed after the loop
+            var childList = _aggregator != null
+                ? (children as IList<TChild> ?? new List<TChild>(children))
+                : null;
+            var enumerable = childList ?? children;
+
+            foreach (var child in enumerable)
             {
                 // Respect stop signals in the pipeline (including CancellationToken)
                 if (msg.ShouldStop) break;
@@ -108,6 +134,12 @@ namespace DataPipe.Core.Filters
                     msg.Execution.Stop(child.Execution.Reason);
                     break;
                 }
+            }
+
+            // Invoke the aggregator with all processed children
+            if (_aggregator != null && childList != null)
+            {
+                _aggregator.Invoke(msg, childList as IReadOnlyList<TChild> ?? new List<TChild>(childList));
             }
         }
     }

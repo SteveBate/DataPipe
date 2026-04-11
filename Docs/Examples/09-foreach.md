@@ -155,3 +155,62 @@ new ParallelForEach<OrderBatchMessage, OrderLineMessage>(msg => msg.Lines,
 ```
 
 Optionally add `maxDegreeOfParallelism` on the parallel version when you need to cap concurrent work.
+
+## Aggregating results after the loop
+
+Use the `aggregator` callback to inspect all child messages after execution completes. The aggregator receives the parent message and the complete list of children:
+
+```csharp
+pipeline.Add(new ForEach<OrderBatchMessage, OrderLineMessage>(
+    msg => msg.Lines,
+    mapper: (parent, child) => child.Currency = parent.Currency,
+    aggregator: (parent, children) =>
+    {
+        parent.FailedLineCount = children.Count(c => !c.IsSuccess);
+        parent.OrderTotal = children
+            .Where(c => c.IsSuccess)
+            .Sum(c => c.LineTotal);
+    },
+    filters:
+        new ValidateLineItem(),
+        new ApplyLineDiscount(),
+        new CalculateLineTotal()
+));
+```
+
+The aggregator runs even if a child stopped the parent pipeline — you always get access to the full child list for summarisation.
+
+### Common aggregation patterns
+
+**Collect failures:**
+
+```csharp
+aggregator: (parent, children) =>
+{
+    parent.FailedRows = children.Where(c => !c.IsSuccess).ToList();
+}
+```
+
+**Summarise results on the parent:**
+
+```csharp
+aggregator: (parent, children) =>
+{
+    parent.TotalProcessed = children.Count;
+    parent.SuccessCount = children.Count(c => c.IsSuccess);
+}
+```
+
+**ParallelForEach works identically:**
+
+```csharp
+pipeline.Add(new ParallelForEach<OrderBatchMessage, OrderLineMessage>(
+    msg => msg.Lines,
+    mapper: (parent, child) => child.Currency = parent.Currency,
+    aggregator: (parent, children) =>
+    {
+        parent.OrderTotal = children.Sum(c => c.LineTotal);
+    },
+    maxDegreeOfParallelism: 4,
+    filters: new ProcessLine()));
+```

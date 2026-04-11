@@ -991,6 +991,20 @@ pipeline.Add(new ForEach<OrderBatchMessage, OrderLineMessage>(
 
 `ForEach` shares the same selector/mapper/filters shape as `ParallelForEach`, making migration to concurrent fan-out a one-line type rename.
 
+An optional `aggregator` callback runs after all children have been processed, receiving the parent and the complete `IReadOnlyList<TChild>`:
+
+```csharp
+pipeline.Add(new ForEach<BatchMessage, OrderMessage>(
+    msg => msg.Orders,
+    mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
+    aggregator: (parent, children) =>
+    {
+        parent.FailedCount = children.Count(c => !c.IsSuccess);
+        parent.TotalProcessed = children.Count;
+    },
+    filters: new ValidateOrder(), new ProcessOrder()));
+```
+
 ### 6.10 OpenSqlConnection\<T\> — Scoped SQL Connection
 
 Requires `IUseSqlCommand` on the message. Opens a SQL connection for child filters:
@@ -1164,6 +1178,21 @@ pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
 ```
 
 **Key:** All child filters must be stateless and thread-safe. `OnLog`/`OnTelemetry` handlers must be thread-safe (logging frameworks and telemetry sinks already are). Without `TryCatch`, a single branch failure cancels all remaining branches. Resilience filters (`OnRateLimit`, `OnCircuitBreak`, `OnTimeoutRetry`) compose naturally inside branches — shared state objects like `RateLimiterState` and `CircuitBreakerState` are thread-safe by design.
+
+An optional `aggregator` callback runs after all branches complete, receiving the parent and the complete `IReadOnlyList<TChild>`:
+
+```csharp
+pipeline.Add(new ParallelForEach<BatchMessage, OrderMessage>(
+    msg => msg.Orders,
+    mapper: (parent, child) => child.ConnectionString = parent.ConnectionString,
+    aggregator: (parent, children) =>
+    {
+        parent.FailedOrders = children.Where(c => !c.IsSuccess).ToList();
+        parent.TotalProcessed = children.Count;
+    },
+    maxDegreeOfParallelism: 4,
+    filters: new ProcessOrder()));
+```
 
 **Migration tip:** Start with sequential `ForEach<TParent, TChild>` and switch to `ParallelForEach<TParent, TChild>` by renaming only the filter type. Keep selector, mapper, and child filters unchanged; add `maxDegreeOfParallelism` only if needed.
 
@@ -2481,8 +2510,8 @@ Pipeline.Invoke(msg)
 | `DelayExecution<T>(delay, filters...)` | `BaseMessage` | Delay before execution |
 | `RepeatUntil<T>(predicate, filters...)` | `BaseMessage` | Loop until predicate true |
 | `Repeat<T>(filters...)` | `BaseMessage` | Infinite loop (break via Stop) |
-| `ForEach<TParent, TChild>(selector, mapper?, filters...)` | `BaseMessage` | Sequential fan-out over child messages |
-| `ParallelForEach<TParent, TChild>(selector, mapper?, maxDegreeOfParallelism?, filters...)` | `BaseMessage` | Concurrent fan-out over child messages |
+| `ForEach<TParent, TChild>(selector, mapper?, aggregator?, filters...)` | `BaseMessage` | Sequential fan-out over child messages |
+| `ParallelForEach<TParent, TChild>(selector, mapper?, aggregator?, maxDegreeOfParallelism?, filters...)` | `BaseMessage` | Concurrent fan-out over child messages |
 | `TryCatch<T>(tryFilters..., catchFilters...)` | `BaseMessage` | Exception handling with separate branches |
 
 ### Filters (DataPipe.Sql)

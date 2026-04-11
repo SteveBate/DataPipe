@@ -1602,4 +1602,285 @@ namespace DataPipe.Tests
             Assert.AreEqual(0, msg.ValidationErrors.Count);
         }
     }
+
+    [TestClass]
+    public class AggregatorCallbackTests
+    {
+        [TestMethod]
+        public async Task ForEach_aggregator_should_receive_all_children_after_execution()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            IReadOnlyList<ChildMessage> captured = null;
+
+            sut.Add(new ForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                mapper: (parent, child) => child.ParentConnectionString = "conn",
+                aggregator: (parent, children) => captured = children,
+                filters: new LambdaFilter<ChildMessage>(c =>
+                {
+                    c.Value = c.Id * 10;
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 },
+                    new ChildMessage { Id = 3 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — aggregator received all 3 processed children
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(3, captured.Count);
+            Assert.AreEqual(10, captured[0].Value);
+            Assert.AreEqual(20, captured[1].Value);
+            Assert.AreEqual(30, captured[2].Value);
+        }
+
+        [TestMethod]
+        public async Task ParallelForEach_aggregator_should_receive_all_children_after_execution()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            IReadOnlyList<ChildMessage> captured = null;
+
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                mapper: (parent, child) => child.ParentConnectionString = "conn",
+                aggregator: (parent, children) => captured = children,
+                maxDegreeOfParallelism: 2,
+                filters: new LambdaFilter<ChildMessage>(c =>
+                {
+                    c.Value = c.Id * 10;
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 },
+                    new ChildMessage { Id = 3 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — aggregator received all 3 children (order may vary in parallel)
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(3, captured.Count);
+            Assert.IsTrue(captured.All(c => c.Value == c.Id * 10));
+        }
+
+        [TestMethod]
+        public async Task ForEach_aggregator_can_collect_failed_children()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            var failedIds = new List<int>();
+
+            sut.Add(new ForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                mapper: null,
+                aggregator: (parent, children) =>
+                {
+                    foreach (var c in children.Where(c => !c.IsSuccess))
+                        failedIds.Add(c.Id);
+                    parent.Number = children.Count(c => c.IsSuccess);
+                },
+                filters: new TryCatch<ChildMessage>(
+                    tryFilters:
+                    [
+                        new LambdaFilter<ChildMessage>(c =>
+                        {
+                            if (c.Id == 2) throw new InvalidOperationException("bad");
+                            c.Value = c.Id;
+                            return Task.CompletedTask;
+                        })
+                    ],
+                    catchFilters:
+                    [
+                        new LambdaFilter<ChildMessage>(c =>
+                        {
+                            c.Fail(500, "Processing failed");
+                            return Task.CompletedTask;
+                        })
+                    ])));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 },
+                    new ChildMessage { Id = 3 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — aggregator identified the failed child
+            Assert.AreEqual(1, failedIds.Count);
+            Assert.AreEqual(2, failedIds[0]);
+            Assert.AreEqual(2, msg.Number); // 2 successful children
+        }
+
+        [TestMethod]
+        public async Task ForEach_without_aggregator_still_works()
+        {
+            // given — verify existing behavior unchanged
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            sut.Add(new ForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                new LambdaFilter<ChildMessage>(c =>
+                {
+                    c.Value = c.Id * 5;
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(5, msg.Children[0].Value);
+            Assert.AreEqual(10, msg.Children[1].Value);
+        }
+
+        [TestMethod]
+        public async Task ParallelForEach_without_aggregator_still_works()
+        {
+            // given — verify existing behavior unchanged
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                new LambdaFilter<ChildMessage>(c =>
+                {
+                    c.Value = c.Id * 5;
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.IsTrue(msg.Children.All(c => c.Value == c.Id * 5));
+        }
+
+        [TestMethod]
+        public async Task ForEach_aggregator_still_called_when_child_stops_parent()
+        {
+            // given — child 2 stops the pipeline, aggregator should still fire with processed children
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            IReadOnlyList<ChildMessage> captured = null;
+
+            sut.Add(new ForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                mapper: null,
+                aggregator: (parent, children) => captured = children,
+                filters: new LambdaFilter<ChildMessage>(c =>
+                {
+                    if (c.Id == 2)
+                    {
+                        c.Execution.Stop("halt");
+                    }
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 },
+                    new ChildMessage { Id = 3 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — aggregator called, all 3 children in the list (even though only 2 were processed)
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(3, captured.Count);
+            Assert.IsTrue(msg.Execution.IsStopped);
+        }
+
+        [TestMethod]
+        public async Task ParallelForEach_aggregator_can_summarise_results_on_parent()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+
+            sut.Add(new ParallelForEach<TestMessage, ChildMessage>(
+                msg => msg.Children,
+                mapper: null,
+                aggregator: (parent, children) =>
+                {
+                    parent.Number = children.Sum(c => c.Value);
+                },
+                maxDegreeOfParallelism: -1,
+                filters: new LambdaFilter<ChildMessage>(c =>
+                {
+                    c.Value = c.Id * 100;
+                    return Task.CompletedTask;
+                })));
+
+            var msg = new TestMessage
+            {
+                Children =
+                [
+                    new ChildMessage { Id = 1 },
+                    new ChildMessage { Id = 2 },
+                    new ChildMessage { Id = 3 }
+                ]
+            };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — parent.Number is the sum: 100 + 200 + 300 = 600
+            Assert.AreEqual(600, msg.Number);
+        }
+    }
 }
