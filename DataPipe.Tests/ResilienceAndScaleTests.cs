@@ -1883,4 +1883,111 @@ namespace DataPipe.Tests
             Assert.AreEqual(600, msg.Number);
         }
     }
+
+    [TestClass]
+    public class CompositeTelemetryAdapterTests
+    {
+        [TestMethod]
+        public async Task Should_fan_out_events_to_all_adapters()
+        {
+            // given
+            var adapter1 = new TestTelemetryAdapter();
+            var adapter2 = new TestTelemetryAdapter();
+            var composite = new CompositeTelemetryAdapter(adapter1, adapter2);
+
+            var sut = new DataPipe<TestMessage>
+            {
+                Name = "CompositeTest",
+                TelemetryMode = TelemetryMode.PipelineAndFilters
+            };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(composite));
+            sut.Add(new IncrementingNumberFilter());
+
+            var msg = new TestMessage();
+            msg.Service = new ServiceIdentity { Name = "TestService", Version = "1.0", Environment = "Test" };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — both adapters received the same events
+            Assert.IsTrue(adapter1.Events.Count > 0);
+            Assert.AreEqual(adapter1.Events.Count, adapter2.Events.Count);
+
+            for (int i = 0; i < adapter1.Events.Count; i++)
+            {
+                Assert.AreEqual(adapter1.Events[i].Component, adapter2.Events[i].Component);
+                Assert.AreEqual(adapter1.Events[i].Phase, adapter2.Events[i].Phase);
+            }
+        }
+
+        [TestMethod]
+        public async Task Should_flush_all_adapters()
+        {
+            // given
+            var adapter1 = new TestTelemetryAdapter();
+            var adapter2 = new TestTelemetryAdapter();
+            var composite = new CompositeTelemetryAdapter(adapter1, adapter2);
+
+            var sut = new DataPipe<TestMessage>
+            {
+                Name = "FlushTest",
+                TelemetryMode = TelemetryMode.PipelineOnly
+            };
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Use(new TelemetryAspect<TestMessage>(composite));
+            sut.Add(new IncrementingNumberFilter());
+
+            var msg = new TestMessage();
+            msg.Service = new ServiceIdentity { Name = "TestService", Version = "1.0", Environment = "Test" };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — both adapters were flushed (Events populated from internal batch)
+            Assert.IsTrue(adapter1.Events.Count > 0, "Adapter 1 should have events after flush");
+            Assert.IsTrue(adapter2.Events.Count > 0, "Adapter 2 should have events after flush");
+        }
+
+        [TestMethod]
+        public void Should_work_with_single_adapter()
+        {
+            // given
+            var adapter = new TestTelemetryAdapter();
+            var composite = new CompositeTelemetryAdapter(adapter);
+
+            var evt = new TelemetryEvent
+            {
+                Component = "Test",
+                Phase = TelemetryPhase.End,
+                Scope = TelemetryScope.Pipeline,
+                Outcome = TelemetryOutcome.Success
+            };
+
+            // when
+            composite.Handle(evt);
+            composite.Flush();
+
+            // then — single adapter received the event
+            Assert.AreEqual(1, adapter.Events.Count);
+        }
+
+        [TestMethod]
+        public void Should_work_with_zero_adapters()
+        {
+            // given
+            var composite = new CompositeTelemetryAdapter();
+
+            var evt = new TelemetryEvent
+            {
+                Component = "Test",
+                Phase = TelemetryPhase.End,
+                Scope = TelemetryScope.Pipeline
+            };
+
+            // when / then — no exception
+            composite.Handle(evt);
+            composite.Flush();
+        }
+    }
 }

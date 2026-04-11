@@ -1550,6 +1550,7 @@ pipeline.Use(new TelemetryAspect<OrderMessage>(adapter));
 |---------|---------|
 | `ConsoleTelemetryAdapter(policy?)` | Batched JSON output to console (development) |
 | `StructuredJsonTelemetryAdapter(logger, policy?)` | Batched structured JSON to ILogger (production) |
+| `CompositeTelemetryAdapter(adapters...)` | Fans out events to multiple adapters (e.g. logging + metrics) |
 
 ### 10.5 Telemetry Policies
 
@@ -1671,6 +1672,102 @@ public async Task CreateOrder(CreateOrderMessage msg)
     await pipe.Invoke(msg);
 }
 ```
+
+### 10.11 CompositeTelemetryAdapter
+
+`CompositeTelemetryAdapter` fans out events to multiple adapters, letting you combine logging and metrics (or any other adapter) in a single pipeline:
+
+```csharp
+var loggingAdapter = new StructuredJsonTelemetryAdapter(logger, policy);
+var metricsAdapter = new MetricsTelemetryAdapter(meterFactory);
+
+var adapter = new CompositeTelemetryAdapter(loggingAdapter, metricsAdapter);
+pipeline.Use(new TelemetryAspect<OrderMessage>(adapter));
+```
+
+Both adapters receive every event, and both are flushed when the pipeline completes.
+
+### 10.12 Pattern: MetricsTelemetryAdapter for Dashboard Monitoring
+
+DataPipe's telemetry events contain all the data needed for real-time metrics. A custom `MetricsTelemetryAdapter` translates events into .NET `System.Diagnostics.Metrics` counters that monitoring systems (Prometheus, Azure Monitor, Grafana, Datadog) scrape directly — no log parsing required:
+
+```csharp
+public sealed class MetricsTelemetryAdapter : ITelemetryAdapter
+{
+    private readonly Counter<long> _pipelineInvocations;
+    private readonly Counter<long> _pipelineErrors;
+    private readonly Counter<long> _filterExecutions;
+    private readonly Histogram<double> _pipelineDuration;
+    private readonly Counter<long> _circuitBreakerTrips;
+    private readonly Counter<long> _rateLimiterRejections;
+
+    public MetricsTelemetryAdapter(IMeterFactory meterFactory)
+    {
+        var meter = meterFactory.Create("DataPipe");
+        _pipelineInvocations    = meter.CreateCounter<long>("datapipe.pipeline.invocations");
+        _pipelineErrors         = meter.CreateCounter<long>("datapipe.pipeline.errors");
+        _filterExecutions       = meter.CreateCounter<long>("datapipe.filter.executions");
+        _pipelineDuration       = meter.CreateHistogram<double>("datapipe.pipeline.duration_ms");
+        _circuitBreakerTrips    = meter.CreateCounter<long>("datapipe.circuitbreaker.trips");
+        _rateLimiterRejections  = meter.CreateCounter<long>("datapipe.ratelimiter.rejections");
+    }
+
+    public void Handle(TelemetryEvent evt)
+    {
+        var tags = new TagList
+        {
+            { "pipeline", evt.PipelineName },
+            { "service", evt.Service?.Name }
+        };
+
+        if (evt.Scope == TelemetryScope.Pipeline && evt.Phase == TelemetryPhase.End)
+        {
+            _pipelineInvocations.Add(1, tags);
+            if (evt.DurationMs.HasValue)
+                _pipelineDuration.Record(evt.DurationMs.Value, tags);
+            if (evt.Outcome == TelemetryOutcome.Exception)
+                _pipelineErrors.Add(1, tags);
+        }
+
+        if (evt.Scope == TelemetryScope.Filter && evt.Phase == TelemetryPhase.End)
+        {
+            _filterExecutions.Add(1, in tags);
+        }
+
+        if (evt.Attributes?.TryGetValue("circuit-state", out var state) == true
+            && state?.ToString() == "Open")
+            _circuitBreakerTrips.Add(1, tags);
+
+        if (evt.Attributes?.TryGetValue("rate-limit-action", out var action) == true
+            && action?.ToString() == "Rejected")
+            _rateLimiterRejections.Add(1, tags);
+    }
+
+    public void Flush() { } // Metrics are pushed in real-time, nothing to batch
+}
+```
+
+**Registration in Program.cs:**
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics.AddMeter("DataPipe");
+        metrics.AddPrometheusExporter(); // or .AddOtlpExporter()
+    });
+```
+
+**Dashboard metrics:**
+
+| Metric | Type | Dashboard use |
+|--------|------|--------------|
+| `datapipe.pipeline.invocations` | Counter | Throughput per pipeline |
+| `datapipe.pipeline.errors` | Counter | Error rate, alerting |
+| `datapipe.pipeline.duration_ms` | Histogram | P50/P95/P99 latency |
+| `datapipe.filter.executions` | Counter | Filter-level hot spots |
+| `datapipe.circuitbreaker.trips` | Counter | Dependency health |
+| `datapipe.ratelimiter.rejections` | Counter | Capacity pressure |
 
 ---
 
@@ -2557,6 +2654,7 @@ Pipeline.Invoke(msg)
 |---------|---------|---------|
 | `ConsoleTelemetryAdapter` | Core | JSON to console |
 | `StructuredJsonTelemetryAdapter` | Core | JSON to ILogger |
+| `CompositeTelemetryAdapter` | Core | Fan-out to multiple adapters |
 
 ### Telemetry Policies
 
