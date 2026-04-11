@@ -1,6 +1,6 @@
 # OpenTelemetry Aspect
 
-DataPipe emits telemetry events when the TelemetryMode is set to any value other than Off for the pipeline. The events are structured to include information such as the message ID, pipeline name, component, scope, role, and service identity. TelemetryAspect provides powerful out-of-the-box integration with any monitoring system of your choice by forwarding these telemetry events to an ITelemetryAdapter implementation or to put it another way, an adapter. Included adapters include BasicConsoleTelemetryAdapter for simple logging and JsonConsoleTelemetryAdapter that can be used immediately to produce structured output to console. A more powerful adapter would be the OpenTelemetryAdapter provided below that allows the events to be captured as spans in an OpenTelemetry-compatible tracing system. In fact, you can create your own adapter to consume the events any way you see fit. e.g., an Azure Service Bus or Application Insights adapter. Simply implement the ITelemetryAdapter interface and handle the TelemetryEvent objects as required.
+DataPipe emits telemetry events when the TelemetryMode is set to any value other than Off for the pipeline. The events are structured to include information such as the message ID, pipeline name, component, scope, role, and service identity. TelemetryAspect provides powerful out-of-the-box integration with any monitoring system of your choice by forwarding these telemetry events to an ITelemetryAdapter implementation or to put it another way, an adapter. Included adapters include `ConsoleTelemetryAdapter` for simple logging and `StructuredJsonTelemetryAdapter` that can be used immediately to produce structured JSON output. A more powerful adapter would be the OpenTelemetryAdapter provided below that allows the events to be captured as spans in an OpenTelemetry-compatible tracing system. In fact, you can create your own adapter to consume the events any way you see fit. e.g., an Azure Service Bus or Application Insights adapter. Simply implement the ITelemetryAdapter interface and handle the TelemetryEvent objects as required.
 
 ## Usage Example
 
@@ -101,9 +101,9 @@ public sealed class OpenTelemetryAdapter : ITelemetryAdapter
             span.Span.SetStatus(Status.Error, evt.Reason);
         }
 
-        if (evt.Duration is not null)
+        if (evt.DurationMs is not null)
         {
-            span.Span.SetAttribute("duration.ms", evt.Duration.Value);
+            span.Span.SetAttribute("duration.ms", evt.DurationMs.Value);
         }
 
         span.Span.End();

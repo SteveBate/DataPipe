@@ -25,7 +25,7 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
     {
         var pipe = new DataPipe<ListOrdersMessage>() { DebugOn = true };
         pipe.Use(new LoggingAspect<ListOrdersMessage>(logger));
-        pipe.Use(new OnErrorAspect<ListOrdersMessage>());
+        pipe.Use(new ExceptionAspect<ListOrdersMessage>());
         pipe.Add(
             new ValidateListOrdersMessage(),
             new OpenSqlConnection<ListOrdersMessage>(AppSettings.Instance.ConnectionStr,
@@ -38,7 +38,7 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
     {
         var pipe = new DataPipe<ViewOrderDetailsMessage>();
         pipe.Use(new LoggingAspect<ViewOrderDetailsMessage>(logger));
-        pipe.Use(new OnErrorAspect<ViewOrderDetailsMessage>());
+        pipe.Use(new ExceptionAspect<ViewOrderDetailsMessage>());
         pipe.Add(                
             new ValidateViewOrderDetailsMessage(),
             new OpenSqlConnection<ViewOrderDetailsMessage>(AppSettings.Instance.ConnectionStr,
@@ -53,7 +53,7 @@ public class OrderService(ILogger<OrderService> logger) : IOrderService
     {
         var pipe = new DataPipe<CreateOrderMessage>();
         pipe.Use(new LoggingAspect<CreateOrderMessage>(logger));
-        pipe.Use(new OnErrorAspect<CreateOrderMessage>());
+        pipe.Use(new ExceptionAspect<CreateOrderMessage>());
         pipe.Add(               
             new ValildateCreateOrderMessage(),
             new OpenSqlConnection<CreateOrderMessage>(AppSettings.Instance.ConnectionStr,

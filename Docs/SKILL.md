@@ -113,6 +113,8 @@ public abstract class BaseMessage : IDisposable
 
 **This is the single most important architectural decision.** Every application defines a domain-specific "context" class that extends `BaseMessage` and implements the DataPipe contracts needed by its pipelines. All operation-specific messages then inherit from this context class, not from `BaseMessage` directly.
 
+> **Telemetry note:** When telemetry is enabled (`TelemetryMode != Off`), a `ServiceIdentity` must be set on the message via the `Service` property. See § 10.3 for details.
+
 ### 4.1 Designing Your Context
 
 Implement contracts on the context class to enable built-in structural filters:

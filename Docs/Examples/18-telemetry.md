@@ -193,9 +193,58 @@ var adapter = new StructuredJsonTelemetryAdapter(logger, policy);
 
 This captures only business filter end events that took at least 50ms.
 
+## Structural Filter Attributes
+
+Structural filters automatically attach custom attributes to their telemetry events via `TelemetryAnnotations`. These appear in the `Attributes` dictionary of the emitted `TelemetryEvent`. The following table lists every attribute emitted by each built-in structural filter.
+
+### Core Structural Filters
+
+| Filter | Attribute | Type | Phase | Description |
+|--------|-----------|------|-------|-------------|
+| **OnTimeoutRetry** | `max-attempts` | `int` | Start, End | Total maximum attempts (retries + 1) |
+| | `final-attempt` | `int` | End | Which attempt execution completed on |
+| | `retry` | `int` | End | Number of retries that occurred (only if > 0) |
+| | `retry-reason` | `string` | End | Last exception message that triggered retry (only if retries > 0) |
+| **OnCircuitBreak** | `circuit-state` | `string` | Start, End | Current state: `Closed`, `Open`, or `HalfOpen` |
+| | `failure-threshold` | `int` | Start | Consecutive failures before the circuit trips |
+| | `break-duration-seconds` | `double` | Start | Duration the circuit stays open |
+| | `failure-count` | `int` | End | Current consecutive failure count |
+| | `circuit-tripped` | `bool` | End | `true` if circuit transitioned to Open during this execution |
+| **OnRateLimit** | `capacity` | `int` | Start, End | Maximum tokens in the bucket |
+| | `queue-depth` | `int` | Start, End | Queue depth at time of emission |
+| | `leak-interval-ms` | `double` | Start | Time between token leaks (ms) |
+| | `behavior` | `string` | Start | `Delay` or `Reject` |
+| | `wait-time-ms` | `long` | End | Milliseconds spent waiting for capacity |
+| | `rejected` | `bool` | End | `true` if the request was rejected |
+| **Timeout** | `timeout-ms` | `long` | Start | Configured timeout duration (ms) |
+| | `timed-out` | `bool` | End | `true` if execution exceeded the timeout |
+| **TryCatch** | `caught-exception` | `bool` | End | `true` if an exception was caught and handled |
+| **Policy** | `decision` | `string` | Start, End | Selected filter name, or `null` if no selection |
+| | `exception` | `string` | End | Exception type name (only on exception pathway) |
+| **IfTrue** | `condition` | `bool` | Start | Result of the predicate evaluation |
+| **IfTrueElse** | `condition` | `bool` | Start | Result of the predicate evaluation |
+| | `branch` | `string` | Start | `then` or `else` — which branch will execute |
+| **ParallelForEach** | `branches` | `int` | Start, End | Number of child messages to process |
+| | `max-parallelism` | `int` | Start | Maximum degree of parallelism (`-1` = unlimited) |
+| **RepeatUntil** | `condition` | `bool` | End | Whether the until-condition was met |
+
+### SQL Filters (DataPipe.Sql)
+
+| Filter | Attribute | Type | Phase | Description |
+|--------|-----------|------|-------|-------------|
+| **OpenSqlConnection** | `database` | `string` | Start | Database name from the opened connection |
+| **StartSqlTransaction** | `isolation-level` | `string` | Start, End | Transaction isolation level |
+| | `database` | `string` | Start, End | Database name |
+| | `committed` | `bool` | End | `true` if committed; `false` if rolled back |
+| **StartTransactionScope** | `isolation-level` | `string` | Start, End | Transaction isolation level |
+| | `timeout` | `string` | Start | Transaction timeout |
+| | `committed` | `bool` | End | `true` if scope completed; `false` if disposed |
+
+> **Note:** `ForEach`, `Repeat`, `Sequence`, `DelayExecution`, and `LambdaFilter` emit standard telemetry events but do not add custom attributes.
+
 ## TelemetryAnnotations
 
-Structural filters can attach custom metadata to telemetry events via `msg.Execution.TelemetryAnnotations`. Annotations are included in the next event's `Attributes` dictionary and automatically cleared after emission:
+In addition to the automatic attributes above, filters can attach custom domain metadata to telemetry events via `msg.Execution.TelemetryAnnotations`. Annotations are included in the next event's `Attributes` dictionary and automatically cleared after emission:
 
 ```csharp
 msg.Execution.TelemetryAnnotations["DatabaseName"] = "OrdersDb";
