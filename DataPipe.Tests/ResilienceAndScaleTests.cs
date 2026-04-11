@@ -1455,4 +1455,151 @@ namespace DataPipe.Tests
             Assert.AreEqual(CircuitState.Closed, state.Status);
         }
     }
+
+    // =========================================================================
+    // 6. Validation Collector Tests
+    // =========================================================================
+
+    [TestClass]
+    public class ValidationCollectorTests
+    {
+        [TestMethod]
+        public async Task Should_collect_multiple_validation_errors_without_stopping()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                msg.ValidationErrors.Add("Name is required");
+                msg.ValidationErrors.Add("Email is required");
+            });
+            sut.Add(new IncrementingNumberFilter()); // should still execute
+
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — errors collected but pipeline continued
+            Assert.AreEqual(2, msg.ValidationErrors.Count);
+            Assert.IsTrue(msg.HasValidationErrors);
+            Assert.AreEqual(1, msg.Number); // filter after validation still ran
+            Assert.IsTrue(msg.IsSuccess); // pipeline itself succeeded
+        }
+
+        [TestMethod]
+        public async Task Should_stop_pipeline_when_StopIfValidationErrors_encounters_errors()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                msg.ValidationErrors.Add("Name is required");
+                msg.ValidationErrors.Add("Email is required");
+            });
+            sut.Add(new StopIfValidationErrors<TestMessage>());
+            sut.Add(new IncrementingNumberFilter()); // should NOT execute
+
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.IsTrue(msg.Execution.IsStopped);
+            Assert.AreEqual(400, msg.StatusCode);
+            Assert.AreEqual("Name is required; Email is required", msg.Execution.Reason);
+            Assert.AreEqual(0, msg.Number); // filter after stop did not run
+        }
+
+        [TestMethod]
+        public async Task Should_pass_through_when_no_validation_errors()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(new StopIfValidationErrors<TestMessage>());
+            sut.Add(new IncrementingNumberFilter());
+
+            var msg = new TestMessage { Number = 0 };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — no errors, pipeline continued
+            Assert.IsFalse(msg.HasValidationErrors);
+            Assert.IsFalse(msg.Execution.IsStopped);
+            Assert.AreEqual(1, msg.Number);
+            Assert.IsTrue(msg.IsSuccess);
+        }
+
+        [TestMethod]
+        public async Task Should_collect_errors_from_multiple_validation_filters()
+        {
+            // given — two separate validation filters each adding errors
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                if (msg.Number == 0)
+                    msg.ValidationErrors.Add("Number must be positive");
+            });
+            sut.Add(async msg =>
+            {
+                if (msg.Words.Length == 0)
+                    msg.ValidationErrors.Add("At least one word required");
+            });
+            sut.Add(new StopIfValidationErrors<TestMessage>());
+            sut.Add(new IncrementingNumberFilter());
+
+            var msg = new TestMessage { Number = 0, Words = [] };
+
+            // when
+            await sut.Invoke(msg);
+
+            // then — both errors collected, pipeline stopped
+            Assert.AreEqual(2, msg.ValidationErrors.Count);
+            Assert.IsTrue(msg.Execution.IsStopped);
+            Assert.AreEqual(400, msg.StatusCode);
+            Assert.IsTrue(msg.Execution.Reason.Contains("Number must be positive"));
+            Assert.IsTrue(msg.Execution.Reason.Contains("At least one word required"));
+            Assert.AreEqual(0, msg.Number); // post-validation filter did not run
+        }
+
+        [TestMethod]
+        public async Task Should_use_custom_status_code_and_separator()
+        {
+            // given
+            var sut = new DataPipe<TestMessage>();
+            sut.Use(new ExceptionAspect<TestMessage>());
+            sut.Add(async msg =>
+            {
+                msg.ValidationErrors.Add("Error 1");
+                msg.ValidationErrors.Add("Error 2");
+            });
+            sut.Add(new StopIfValidationErrors<TestMessage>(statusCode: 422, separator: " | "));
+
+            var msg = new TestMessage();
+
+            // when
+            await sut.Invoke(msg);
+
+            // then
+            Assert.AreEqual(422, msg.StatusCode);
+            Assert.AreEqual("Error 1 | Error 2", msg.Execution.Reason);
+        }
+
+        [TestMethod]
+        public async Task HasValidationErrors_should_be_false_when_no_errors_added()
+        {
+            // given
+            var msg = new TestMessage();
+
+            // then
+            Assert.IsFalse(msg.HasValidationErrors);
+            Assert.AreEqual(0, msg.ValidationErrors.Count);
+        }
+    }
 }

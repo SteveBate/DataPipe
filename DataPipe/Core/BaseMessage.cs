@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -38,6 +39,10 @@ namespace DataPipe.Core
 
         // Transient inter-filter state bag — opt-in storage for intermediate values during pipeline execution
         [JsonIgnore] public TransientState State { get; } = new();
+
+        // Validation error collection — filters add errors without stopping; check HasValidationErrors or use StopIfValidationErrors to halt
+        [JsonIgnore] public List<string> ValidationErrors { get; } = [];
+        [JsonIgnore] public bool HasValidationErrors => ValidationErrors.Count > 0;
 
         // Lifecycle hooks
         [JsonIgnore] public Action<BaseMessage, Exception>? OnError = delegate { };

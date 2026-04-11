@@ -96,6 +96,8 @@ public abstract class BaseMessage : IDisposable
 | `Execution` | `ExecutionContext` | Flow control: `Stop(reason?)`, `Reset()`, `IsStopped`, `Reason`, `TelemetryAnnotations` |
 | `ShouldStop` | `bool` | Convenience: `Execution.IsStopped \|\| CancellationToken.IsCancellationRequested` |
 | `State` | `TransientState` | Lightweight bag for storing intermediate inter-filter values during pipeline execution |
+| `ValidationErrors` | `List<string>` | Collecting validation errors without stopping — use with `StopIfValidationErrors<T>` |
+| `HasValidationErrors` | `bool` | `true` when `ValidationErrors.Count > 0` |
 | `Tag` | `string` | General purpose tag for extra context in logs |
 | `OnError` | `Action<BaseMessage, Exception>?` | Error lifecycle callback |
 | `OnStart` | `Action<BaseMessage>?` | Start lifecycle callback |
@@ -594,6 +596,43 @@ public class ValidateCreateOrderMessage : Filter<CreateOrderMessage>
     }
 }
 ```
+
+#### Pattern: Validate-and-Collect
+
+When API consumers benefit from seeing all validation failures at once, use `ValidationErrors` to collect errors without stopping, then `StopIfValidationErrors<T>` to halt the pipeline after all validation filters have run:
+
+```csharp
+public class ValidateCustomerName : Filter<RegisterCustomerMessage>
+{
+    public Task Execute(RegisterCustomerMessage msg)
+    {
+        if (string.IsNullOrWhiteSpace(msg.Name))
+            msg.ValidationErrors.Add("Name is required");
+        return Task.CompletedTask;
+    }
+}
+
+public class ValidateCustomerEmail : Filter<RegisterCustomerMessage>
+{
+    public Task Execute(RegisterCustomerMessage msg)
+    {
+        if (string.IsNullOrWhiteSpace(msg.Email))
+            msg.ValidationErrors.Add("Email is required");
+        else if (!msg.Email.Contains('@'))
+            msg.ValidationErrors.Add("A valid email address is required");
+        return Task.CompletedTask;
+    }
+}
+```
+
+```csharp
+pipe.Add(new ValidateCustomerName());
+pipe.Add(new ValidateCustomerEmail());
+pipe.Add(new StopIfValidationErrors<RegisterCustomerMessage>());  // stops with combined message, StatusCode = 400
+pipe.Add(new SaveCustomer());  // only runs if no validation errors
+```
+
+`StopIfValidationErrors<T>` joins all collected errors with `"; "` (configurable) and sets `StatusCode = 400` (configurable). Use the Validate-and-Stop pattern when fail-fast on the first error is preferred; use Validate-and-Collect when the caller needs all errors at once.
 
 #### Pattern: Lookup / Enrichment
 
@@ -2436,6 +2475,7 @@ Pipeline.Invoke(msg)
 | `Sequence<T>(filters...)` | `BaseMessage` | Group filters as one logical step |
 | `OnTimeoutRetry<T>(max, filters...)` | `IAmRetryable` | Retry on timeout |
 | `OnCircuitBreak<T>(state, threshold?, duration?, jitterRatio?, filters...)` | `BaseMessage` | Circuit breaker pattern (jitterRatio 0.0–1.0 spreads recovery) |
+| `StopIfValidationErrors<T>(statusCode?, separator?)` | `BaseMessage` | Stops pipeline if `ValidationErrors` is non-empty |
 | `OnRateLimit<T>(state, capacity, leakInterval, behavior?, filters...)` | `BaseMessage` | Rate limiting (leaky bucket) |
 | `Timeout<T>(duration, filters...)` | `BaseMessage` | Timeout execution |
 | `DelayExecution<T>(delay, filters...)` | `BaseMessage` | Delay before execution |
