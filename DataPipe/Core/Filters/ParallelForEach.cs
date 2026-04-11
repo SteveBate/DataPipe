@@ -95,7 +95,11 @@ namespace DataPipe.Core.Filters
             try
             {
                 var children = _selector(msg);
-                if (children == null) return;
+                if (children == null)
+                {
+                    msg.OnLog?.Invoke($"{nameof(ParallelForEach<TParent, TChild>)}: selector returned null. Skipping.");
+                    return;
+                }
 
                 // Materialise to count branches for telemetry
                 var childList = children as ICollection<TChild> ?? new List<TChild>(children);

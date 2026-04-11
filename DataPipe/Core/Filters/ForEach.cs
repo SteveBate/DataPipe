@@ -59,7 +59,11 @@ namespace DataPipe.Core.Filters
         public async Task Execute(TParent msg)
         {
             var children = _selector(msg);
-            if (children == null) return;
+            if (children == null)
+            {
+                msg.OnLog?.Invoke($"{nameof(ForEach<TParent, TChild>)}: selector returned null. Skipping.");
+                return;
+            }
 
             foreach (var child in children)
             {
