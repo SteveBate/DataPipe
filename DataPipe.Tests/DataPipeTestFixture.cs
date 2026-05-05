@@ -2375,6 +2375,53 @@ namespace DataPipe.Tests
             Assert.IsNull(msg.OnLog);
         }
 
+        // ── Inner / Nested pipeline tests ───────────────────────────────────────
+
+        [TestMethod]
+        public async Task Should_retain_OnLog_after_inner_pipeline_uses_InvokeBorrowed()
+        {
+            // given — an outer message with OnLog wired to capture all log output
+            var logs = new List<string>();
+            var msg = new TestMessage { Number = 0, OnLog = log => logs.Add(log) };
+
+            // inner pipeline that increments and logs via the shared message
+            var innerPipe = new DataPipe<TestMessage>();
+            innerPipe.Name = "InnerPipe";
+            innerPipe.Use(new ExceptionAspect<TestMessage>());
+            innerPipe.Add(async m =>
+            {
+                m.Number += 10;
+                m.OnLog?.Invoke("INNER: work done");
+            });
+
+            // outer pipeline: first filter invokes the inner pipeline via InvokeBorrowed,
+            // second filter proves OnLog is still alive
+            var outerPipe = new DataPipe<TestMessage>();
+            outerPipe.Name = "OuterPipe";
+            outerPipe.Use(new ExceptionAspect<TestMessage>());
+            outerPipe.Add(async m =>
+            {
+                await innerPipe.InvokeBorrowed(m);
+            });
+            outerPipe.Add(async m =>
+            {
+                m.Number += 1;
+                m.OnLog?.Invoke("OUTER: after inner");
+            });
+
+            // when
+            await outerPipe.Invoke(msg);
+
+            // then — OnLog captured messages from both inner and outer pipelines
+            Assert.IsTrue(logs.Any(l => l.Contains("INNER: work done")),
+                "Expected inner pipeline log via borrowed message");
+            Assert.IsTrue(logs.Any(l => l.Contains("OUTER: after inner")),
+                "Expected outer pipeline log after InvokeBorrowed returned");
+
+            // and the filter work from both pipelines was applied
+            Assert.AreEqual(11, msg.Number);
+        }
+
         // ── Concurrency stress tests ──────────────────────────────────────────────
 
         [TestMethod]

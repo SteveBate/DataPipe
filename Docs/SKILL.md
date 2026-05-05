@@ -52,7 +52,8 @@ public class DataPipe<T> where T : BaseMessage
 | `Add(Func<T, Task>)` | Registers an inline lambda filter |
 | `AddIf(bool, Filter<T>, Filter<T>?)` | Conditional filter registration at build time |
 | `Finally(Filter<T>)` | Registers a guaranteed-execution filter (runs even on error/stop) |
-| `Invoke(T msg)` | Executes the pipeline: Aspects → Filters → Finally |
+| `Invoke(T msg)` | Executes the pipeline: Aspects → Filters → Finally. Disposes the message on completion. |
+| `InvokeBorrowed(T msg)` | Executes the pipeline without disposing the message. Use for inner pipelines on a shared message. |
 
 ### 3.2 Filter\<T\> — The Work Unit
 
@@ -2293,7 +2294,11 @@ public interface ITelemetryAdapter
 
 ## 18. Inner / Nested Pipelines
 
-A filter can create and invoke a sub-pipeline inside its `Execute()` method:
+A filter can create and invoke a sub-pipeline inside its `Execute()` method. Use `InvokeBorrowed` when the inner pipeline operates on the same message as the outer pipeline — this prevents the inner pipeline from disposing the message so that delegates (`OnLog`, `OnTelemetry`, etc.) and state remain intact for subsequent outer filters.
+
+### 18.1 Inner Pipeline with a Separate Message (`Invoke`)
+
+When the inner pipeline uses its own message, call `Invoke` as normal:
 
 ```csharp
 public class GetDayStats : Filter<StatsMessage>
@@ -2320,8 +2325,34 @@ public class GetDayStats : Filter<StatsMessage>
 }
 ```
 
+### 18.2 Inner Pipeline on a Shared Message (`InvokeBorrowed`)
+
+When the inner pipeline operates on the **same message** as the outer pipeline, call `InvokeBorrowed` so the inner pipeline does not dispose the message. This keeps `OnLog`, `OnTelemetry`, and other delegates alive for subsequent outer filters:
+
+```csharp
+public class EnrichOrder : Filter<OrderMessage>
+{
+    public async Task Execute(OrderMessage msg)
+    {
+        var innerPipe = new DataPipe<OrderMessage>();
+        innerPipe.Name = "EnrichOrder-Inner";
+        innerPipe.Use(new ExceptionAspect<OrderMessage>());
+        innerPipe.Add(new LookupCustomerDetails());
+        innerPipe.Add(new ApplyDiscountRules());
+
+        // InvokeBorrowed — the outer pipeline owns the message lifecycle
+        await innerPipe.InvokeBorrowed(msg);
+
+        // OnLog and all other delegates are still intact here
+        msg.OnLog?.Invoke("Enrichment complete");
+    }
+}
+```
+
 **Guidelines for inner pipelines:**
-- Use `CopyClaimsFrom(msg)` to propagate user context
+- Use `InvokeBorrowed` when the inner pipeline shares the outer message — this avoids disposing delegates mid-execution
+- Use `Invoke` when the inner pipeline has its own message — the inner message is disposed normally
+- Use `CopyClaimsFrom(msg)` to propagate user context to separate inner messages
 - Inner pipes typically have aspects (error + logging) but often skip telemetry
 - Inner pipes don't need a `Name` (not tracked at the outer telemetry level)
 - Keep nesting shallow — one level of inner pipeline is the practical limit

@@ -91,13 +91,29 @@ namespace DataPipe.Core
         }
 
         /// <summary>
-        /// Invoke kicks off the unit of work including all registered aspects
+        /// Invoke kicks off the unit of work including all registered aspects.
+        /// The pipeline owns the message lifecycle and disposes it when execution completes.
         /// </summary>
-        public async Task Invoke(T msg)
+        public Task Invoke(T msg)
+        {
+            return InvokeCore(msg, disposeMessage: true);
+        }
+
+        /// <summary>
+        /// InvokeBorrowed executes the pipeline against a message owned by an outer caller.
+        /// The pipeline will not dispose the message when execution completes.
+        /// Use this for nested pipelines that operate on a shared parent message.
+        /// </summary>
+        public Task InvokeBorrowed(T msg)
+        {
+            return InvokeCore(msg, disposeMessage: false);
+        }
+
+        private async Task InvokeCore(T msg, bool disposeMessage)
         {
             // Set the pipeline name on the message
             msg.PipelineName = Name;
-            
+
             // Set the telemetry mode on the message
             msg.TelemetryMode = TelemetryMode;
 
@@ -109,10 +125,10 @@ namespace DataPipe.Core
             {
                 case var x when x != TelemetryMode.Off && msg.Service == null:
                     throw new InvalidOperationException("ServiceIdentity must be set on the message when telemetry is enabled.");
-                    
+
                 case var x when x != TelemetryMode.Off && string.IsNullOrWhiteSpace(msg.Service?.Name):
                     throw new InvalidOperationException("ServiceIdentity.Name must be set when telemetry is enabled.");
-                
+
                 case var x when x != TelemetryMode.Off && string.IsNullOrWhiteSpace(msg.Service?.Environment):
                     throw new InvalidOperationException("ServiceIdentity.Environment must be set when telemetry is enabled.");
             }
@@ -123,7 +139,10 @@ namespace DataPipe.Core
             }
             finally
             {
-                msg.Dispose();
+                if (disposeMessage)
+                {
+                    msg.Dispose();
+                }
             }
         }
 

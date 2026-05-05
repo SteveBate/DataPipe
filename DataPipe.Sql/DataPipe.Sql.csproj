@@ -7,7 +7,7 @@
     <IsPackable>true</IsPackable>
 
     <PackageId>SCB.DataPipe.Sql</PackageId>
-    <Version>4.7.1</Version>
+    <Version>4.7.2</Version>
 
     <Authors>Stephen C. Bate</Authors>
     <Description>DataPipe.Sql: Ready-made transaction and SQL filters for DataPipe.</Description>
@@ -28,7 +28,7 @@
   </ItemGroup>
   
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.3" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
     <ProjectReference Include="..\DataPipe\DataPipe.csproj" />
   </ItemGroup>
